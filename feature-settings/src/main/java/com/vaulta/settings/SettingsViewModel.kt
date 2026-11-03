@@ -1,0 +1,203 @@
+package com.vaulta.settings
+
+import android.net.Uri
+import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.vaulta.crypto.SecureMemory
+import com.vaulta.storage.index.EncryptedIndex
+import com.vaulta.storage.index.VaultStats
+import com.vaulta.vault.sync.SyncProvider
+import com.vaulta.vault.VaultOperations
+import com.vaulta.vault.biometric.BiometricUnlockManager
+import com.vaulta.vault.preferences.AppPreferencesManager
+import com.vaulta.vault.preferences.AppThemeMode
+import com.vaulta.vault.preferences.AppThemeStyle
+import com.vaulta.vault.preferences.KeyFilePreferenceManager
+import com.vaulta.vault.session.AutoLockManager
+import com.vaulta.vault.session.VaultSession
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+sealed interface SettingsUiState {
+    data object Idle : SettingsUiState
+    data object Processing : SettingsUiState
+    data class Success(val message: String) : SettingsUiState
+    data class Error(val message: String) : SettingsUiState
+}
+
+@HiltViewModel
+class SettingsViewModel @Inject constructor(
+    private val vaultOperations: VaultOperations,
+    private val vaultSession: VaultSession,
+    private val autoLockManager: AutoLockManager,
+    private val syncProvider: SyncProvider,
+    val biometricUnlockManager: BiometricUnlockManager,
+    private val keyFilePreferenceManager: KeyFilePreferenceManager,
+    private val appPreferencesManager: AppPreferencesManager,
+    private val encryptedIndex: EncryptedIndex
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow<SettingsUiState>(SettingsUiState.Idle)
+    val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
+
+    val isSyncAvailable: Boolean
+        get() = syncProvider.isAvailable
+
+    val syncProviderName: String
+        get() = syncProvider.providerName
+
+    val isOfflineEdition: Boolean
+        get() = syncProvider.providerName == "Offline (Air-Gapped)"
+
+    val autoLockTimeoutMinutes: StateFlow<Int> = appPreferencesManager.autoLockTimeoutMinutes
+
+    private val _isBiometricEnabled = MutableStateFlow(biometricUnlockManager.isBiometricEnabled())
+    val isBiometricEnabled: StateFlow<Boolean> = _isBiometricEnabled.asStateFlow()
+
+    val isScreenProtectionEnabled: StateFlow<Boolean> = appPreferencesManager.isScreenProtectionEnabled
+    val themeMode: StateFlow<AppThemeMode> = appPreferencesManager.themeMode
+    val themeStyle: StateFlow<AppThemeStyle> = appPreferencesManager.themeStyle
+
+    private val _vaultStats = MutableStateFlow<VaultStats?>(null)
+    val vaultStats: StateFlow<VaultStats?> = _vaultStats.asStateFlow()
+
+    init {
+        refreshStats()
+    }
+
+    fun refreshStats() {
+        viewModelScope.launch {
+            try {
+                _vaultStats.value = encryptedIndex.getVaultStats()
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun setScreenProtectionEnabled(enabled: Boolean) {
+        appPreferencesManager.setScreenProtectionEnabled(enabled)
+    }
+
+    fun setThemeMode(mode: AppThemeMode) {
+        appPreferencesManager.setThemeMode(mode)
+    }
+
+    fun setThemeStyle(style: AppThemeStyle) {
+        appPreferencesManager.setThemeStyle(style)
+    }
+
+    fun getSavedKeyFileUri(): Uri? = keyFilePreferenceManager.getSavedKeyFileUri()
+
+    fun getKeyFileName(uri: Uri): String = keyFilePreferenceManager.getFileName(uri)
+
+    fun saveKeyFileUri(uri: Uri) = keyFilePreferenceManager.saveKeyFileUri(uri)
+
+    fun canAuthenticateBiometrics(): Boolean = biometricUnlockManager.canAuthenticate()
+
+    fun refreshBiometricState() {
+        _isBiometricEnabled.value = biometricUnlockManager.isBiometricEnabled()
+    }
+
+    fun enableBiometrics(activity: FragmentActivity, onResult: (Boolean, String?) -> Unit) {
+        try {
+            vaultSession.withMasterKey { masterKey ->
+                biometricUnlockManager.promptEnableBiometrics(
+                    activity = activity,
+                    masterKey = masterKey,
+                    onSuccess = {
+                        _isBiometricEnabled.value = true
+                        onResult(true, null)
+                    },
+                    onError = { error ->
+                        _isBiometricEnabled.value = false
+                        onResult(false, error)
+                    }
+                )
+            }
+        } catch (e: Exception) {
+            onResult(false, "Vault must be unlocked to enable biometrics")
+        }
+    }
+
+    fun disableBiometrics() {
+        biometricUnlockManager.disableBiometrics()
+        _isBiometricEnabled.value = false
+    }
+
+    fun setAutoLockTimeout(minutes: Int) {
+        appPreferencesManager.setAutoLockTimeoutMinutes(minutes)
+        autoLockManager.setTimeoutMs(minutes * 60 * 1000L)
+    }
+
+    fun changePassword(
+        currentPassword: CharArray,
+        newPassword: CharArray,
+        keyFileUri: Uri
+    ) {
+        if (newPassword.size < 8) {
+            _uiState.value = SettingsUiState.Error("New password must be at least 8 characters")
+            SecureMemory.wipe(currentPassword)
+            SecureMemory.wipe(newPassword)
+            return
+        }
+
+        _uiState.value = SettingsUiState.Processing
+        viewModelScope.launch {
+            try {
+                vaultOperations.changePassword(currentPassword, newPassword, keyFileUri)
+                _uiState.value = SettingsUiState.Success("Password changed successfully")
+            } catch (e: Exception) {
+                _uiState.value = SettingsUiState.Error("Failed to change password: ${e.message}")
+            }
+        }
+    }
+
+    fun getSignInIntent(context: android.content.Context): android.content.Intent? {
+        return syncProvider.getSignInIntent(context)
+    }
+
+    fun handleSignInResult(data: android.content.Intent?) {
+        val result = syncProvider.handleSignInResult(data)
+        if (result.isSuccess) {
+            _uiState.value = SettingsUiState.Success("Signed in as ${result.getOrNull()}")
+        } else {
+            val errorMsg = result.exceptionOrNull()?.message ?: "Sign in failed"
+            _uiState.value = SettingsUiState.Error(errorMsg)
+        }
+    }
+
+    fun signOut() {
+        syncProvider.signOut()
+        _uiState.value = SettingsUiState.Success("Signed out of Google Drive")
+    }
+
+    fun syncNow() {
+        if (!syncProvider.isAvailable) {
+            _uiState.value = SettingsUiState.Error("Sync is disabled in this edition")
+            return
+        }
+        _uiState.value = SettingsUiState.Processing
+        viewModelScope.launch {
+            val result = syncProvider.sync()
+            if (result.isSuccess) {
+                _uiState.value = SettingsUiState.Success("Cloud synchronization completed")
+            } else {
+                _uiState.value = SettingsUiState.Error(
+                    result.exceptionOrNull()?.message ?: "Sync failed"
+                )
+            }
+        }
+    }
+
+    fun lockVault() {
+        vaultSession.lock()
+    }
+
+    fun clearState() {
+        _uiState.value = SettingsUiState.Idle
+    }
+}
