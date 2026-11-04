@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a Security Vulnerability
+    url: https://github.com/shrs425p/Vaulta/security/advisories/new
+    about: Please report cryptographic flaws or sensitive bugs privately.

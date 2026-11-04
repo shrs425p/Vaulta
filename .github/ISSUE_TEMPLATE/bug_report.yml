@@ -1,0 +1,50 @@
+name: Bug Report
+description: Report a defect or malfunction in Vaulta
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting an issue! Please provide as much detail as possible.
+        *If this is a security flaw, please report confidentially via GitHub Security Advisories instead.*
+  - type: dropdown
+    id: edition
+    attributes:
+      label: Vaulta Edition
+      options:
+        - Offline Edition (Air-Gapped)
+        - Online Edition (Google Drive Sync)
+    validations:
+      required: true
+  - type: input
+    id: android-version
+    attributes:
+      label: Android Version & Device
+      placeholder: e.g. Android 14, Google Pixel 8
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug.
+    validations:
+      required: true
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: Steps to Reproduce
+      placeholder: |
+        1. Open Vault
+        2. Tap on ...
+        3. Observe error
+    validations:
+      required: true
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected Behavior
+      description: What should have happened instead?
+    validations:
+      required: true
