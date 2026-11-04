@@ -133,4 +133,37 @@ class StreamingEncryptionTest {
         )
         assertThat(decryptedChunk).isEqualTo(data)
     }
+
+    @Test
+    fun decryptStream_rejectsMalformedChunkLength_tooSmall() {
+        val fileKey = randomProvider.nextBytes(32)
+        val malformedBuffer = Buffer().apply {
+            writeByte(StreamingEncryptionImpl.STREAM_VERSION.toInt())
+            write(randomProvider.nextBytes(StreamingEncryptionImpl.STREAM_NONCE_PREFIX_SIZE))
+            writeInt(5) // Less than TAG_SIZE_BYTES (16)
+            writeByte(1) // isLast
+            write(ByteArray(5))
+        }
+
+        val decryptedOutput = Buffer()
+        assertThrows(IOException::class.java) {
+            streamingEncryption.decryptStream(malformedBuffer, decryptedOutput, fileKey)
+        }
+    }
+
+    @Test
+    fun decryptStream_rejectsMalformedChunkLength_tooLarge() {
+        val fileKey = randomProvider.nextBytes(32)
+        val malformedBuffer = Buffer().apply {
+            writeByte(StreamingEncryptionImpl.STREAM_VERSION.toInt())
+            write(randomProvider.nextBytes(StreamingEncryptionImpl.STREAM_NONCE_PREFIX_SIZE))
+            writeInt(1_000_000) // Exceeds MAX_CHUNK_LENGTH (65,556)
+            writeByte(1) // isLast
+        }
+
+        val decryptedOutput = Buffer()
+        assertThrows(IOException::class.java) {
+            streamingEncryption.decryptStream(malformedBuffer, decryptedOutput, fileKey)
+        }
+    }
 }

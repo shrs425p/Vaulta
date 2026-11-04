@@ -10,6 +10,7 @@ import com.vaulta.storage.index.SyncStatus
 import com.vaulta.storage.index.SyncPolicy
 import com.vaulta.sync.drive.DriveSyncClient
 import com.vaulta.vault.session.VaultSession
+import com.vaulta.vault.sync.CloudStorageStats
 import com.vaulta.vault.sync.SyncProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -36,6 +37,8 @@ class SyncEngine @Inject constructor(
 
     fun isSyncAvailable(): Boolean = driveClient.isSignedIn()
 
+    private var pendingCleanupOldSpaceWasStealth: Boolean? = null
+
     suspend fun performSync(): Result<Unit> = withContext(Dispatchers.IO) {
         if (!driveClient.isSignedIn()) {
             return@withContext Result.failure(IllegalStateException("Google Drive not signed in"))
@@ -47,9 +50,12 @@ class SyncEngine @Inject constructor(
 
         try {
             vaultSession.withMasterKey { masterKey ->
+                val localEntitiesBefore = vaultEntryDao.getAllEntries()
+                val isLocalEmpty = localEntitiesBefore.none { it.syncStatus != SyncStatus.DELETED.name }
+
                 // Step 0: Download remote index from Google Drive and merge remote changes
-                Log.d(TAG, "Step 0: Checking and downloading remote index from Google Drive...")
-                val remoteIndexBytes = driveClient.downloadIndex()
+                Log.d(TAG, "Step 0: Checking and downloading remote index from Google Drive (allowAutoDiscovery=$isLocalEmpty)...")
+                val remoteIndexBytes = driveClient.downloadIndex(allowAutoDiscovery = isLocalEmpty)
                 val clientError = driveClient.getLastError()
                 if (clientError != null) {
                     throw IllegalStateException(clientError)
@@ -224,6 +230,12 @@ class SyncEngine @Inject constructor(
                     throw IllegalStateException(err)
                 }
                 encryptedIndex.saveIndex(masterKey)
+
+                // If this sync was migrating from one storage space to another, clean up old space!
+                pendingCleanupOldSpaceWasStealth?.let { oldWasStealth ->
+                    try { driveClient.deleteOldStorageSpace(oldWasStealth) } catch (_: Throwable) {}
+                    pendingCleanupOldSpaceWasStealth = null
+                }
             }
 
             Result.success(Unit)
@@ -300,6 +312,10 @@ class SyncEngine @Inject constructor(
         driveClient.setManualEmail(email)
     }
 
+    override fun getSignedInEmail(): String? {
+        return driveClient.getSignedInEmail()
+    }
+
     override fun signOut(): Boolean {
         return driveClient.signOut()
     }
@@ -309,7 +325,59 @@ class SyncEngine @Inject constructor(
     }
 
     override suspend fun switchStorageSpace(toStealthMode: Boolean): Boolean {
-        return driveClient.switchStorageSpace(toStealthMode)
+        val switched = driveClient.switchStorageSpace(toStealthMode)
+        if (switched) {
+            // Record old space to clean up after successful upload into the new space
+            pendingCleanupOldSpaceWasStealth = !toStealthMode
+
+            // Mark all local active files as PENDING so that the subsequent sync
+            // uploads all blobs and index into the newly selected storage space!
+            val localEntities = vaultEntryDao.getAllEntries()
+            for (entity in localEntities) {
+                if (entity.syncStatus != SyncStatus.DELETED.name && entity.syncPolicy != SyncPolicy.LOCAL_ONLY.name) {
+                    vaultEntryDao.updateEntry(entity.copy(syncStatus = SyncStatus.PENDING.name))
+                }
+            }
+        }
+        return switched
+    }
+
+    override suspend fun getCloudStorageStats(): Result<CloudStorageStats> = withContext(Dispatchers.IO) {
+        if (!driveClient.isSignedIn()) {
+            return@withContext Result.failure(IllegalStateException("Google Drive is not signed in"))
+        }
+        val stats = driveClient.getCloudStorageStats()
+        if (stats != null) {
+            Result.success(stats)
+        } else {
+            Result.failure(IllegalStateException(driveClient.getLastError() ?: "Failed fetching cloud stats"))
+        }
+    }
+
+    override suspend fun wipeCloudStorage(): Result<Unit> = withContext(Dispatchers.IO) {
+        if (!driveClient.isSignedIn()) {
+            return@withContext Result.failure(IllegalStateException("Google Drive is not signed in"))
+        }
+        val wiped = driveClient.wipeCurrentStorage()
+        if (wiped) {
+            val localEntities = vaultEntryDao.getAllEntries()
+            for (entity in localEntities) {
+                if (entity.syncStatus != SyncStatus.DELETED.name) {
+                    vaultEntryDao.updateEntry(entity.copy(syncStatus = SyncStatus.PENDING.name))
+                }
+            }
+            Result.success(Unit)
+        } else {
+            Result.failure(IllegalStateException(driveClient.getLastError() ?: "Failed wiping cloud storage"))
+        }
+    }
+
+    override suspend fun deleteRemoteBlobById(fileId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        if (!driveClient.isSignedIn()) {
+            return@withContext Result.failure(IllegalStateException("Google Drive is not signed in"))
+        }
+        val deleted = driveClient.deleteBlobById(fileId)
+        if (deleted) Result.success(Unit) else Result.failure(IllegalStateException("Failed deleting file"))
     }
 
     companion object {

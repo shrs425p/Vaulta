@@ -120,8 +120,8 @@ dependencies {
     implementation(libs.navigation.compose)
     implementation(libs.hilt.android)
     implementation(libs.hilt.navigation.compose)
-    implementation(libs.hilt.work)
-    implementation(libs.work.runtime)
+    "cloudImplementation"(libs.hilt.work)
+    "cloudImplementation"(libs.work.runtime)
     ksp(libs.androidx.hilt.compiler)
     ksp(libs.hilt.compiler)
 
@@ -129,3 +129,5 @@ dependencies {
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.test.manifest)
 }
+
+

@@ -20,13 +20,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -86,7 +92,12 @@ fun SettingsScreen(
     val currentThemeStyle by viewModel.themeStyle.collectAsStateWithLifecycle()
     val stats by viewModel.vaultStats.collectAsStateWithLifecycle()
     val isSyncAvailable by viewModel.isSyncAvailable.collectAsStateWithLifecycle()
+    val signedInEmail by viewModel.signedInEmail.collectAsStateWithLifecycle()
     val isStealthSyncEnabled by viewModel.isStealthSyncEnabled.collectAsStateWithLifecycle()
+    val cloudStorageStats by viewModel.cloudStorageStats.collectAsStateWithLifecycle()
+    val isFetchingCloudStats by viewModel.isFetchingCloudStats.collectAsStateWithLifecycle()
+    var showCloudInspectorDialog by remember { mutableStateOf(false) }
+    var showWipeConfirmDialog by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     val isOffline = remember(context) { context.packageName.endsWith(".offline") }
@@ -297,13 +308,32 @@ fun SettingsScreen(
                                 Text("Google Drive Sync", fontWeight = FontWeight.SemiBold)
                             },
                             supportingContent = {
-                                Text(
-                                    if (isSyncAvailable)
-                                        "Uploads encrypted blobs & encrypted index. Plaintext is never transmitted."
-                                    else
-                                        "Google Drive account is not signed in. Tap to authenticate and sync.",
-                                    style = MaterialTheme.typography.bodySmall
-                                )
+                                Column(modifier = Modifier.padding(top = 2.dp)) {
+                                    if (isSyncAvailable) {
+                                        if (!signedInEmail.isNullOrBlank()) {
+                                            Text(
+                                                text = "Connected: $signedInEmail",
+                                                fontWeight = FontWeight.Medium,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                        }
+                                        Text(
+                                            text = if (isStealthSyncEnabled)
+                                                "Active Space: Google Drive AppData (Hidden folder)\nBackups are encrypted and hidden from Google Drive web."
+                                            else
+                                                "Active Space: My Drive > Vaulta Backups (Visible folder)\nBackups are encrypted in your Google Drive folder.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    } else {
+                                        Text(
+                                            "Google Drive account is not signed in. Tap Sign In to backup and sync your encrypted vault.",
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                    }
+                                }
                             },
                             trailingContent = {
                                 if (uiState is SettingsUiState.Processing) {
@@ -369,9 +399,9 @@ fun SettingsScreen(
                             supportingContent = {
                                 Text(
                                     text = if (isStealthSyncEnabled)
-                                        "ON (Stealth) • Backups stored in Google Drive's hidden appDataFolder (invisible in Drive search)."
+                                        "ON (Stealth) • Backups stored in Google Drive's hidden appDataFolder (invisible in Drive web & search). Toggling moves backups automatically."
                                     else
-                                        "OFF (Visible) • Backups stored in My Drive > Vaulta Backups folder.",
+                                        "OFF (Visible) • Backups stored in My Drive > 'Vaulta Backups' folder. Toggling moves backups automatically.",
                                     style = MaterialTheme.typography.bodySmall
                                 )
                             },
@@ -383,6 +413,97 @@ fun SettingsScreen(
                                 )
                             }
                         )
+
+                        if (isSyncAvailable) {
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+
+                            // Cloud Storage Quota & Inspector
+                            ListItem(
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                leadingContent = {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(42.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(MaterialTheme.colorScheme.tertiaryContainer),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Storage,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                },
+                                headlineContent = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("Cloud Backup Storage", fontWeight = FontWeight.SemiBold)
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        if (isFetchingCloudStats) {
+                                            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                                        }
+                                    }
+                                },
+                                supportingContent = {
+                                    Column(modifier = Modifier.padding(top = 2.dp)) {
+                                        val stats = cloudStorageStats
+                                        if (stats != null) {
+                                            Text(
+                                                text = "${stats.totalFiles} files in cloud • ${formatBytes(stats.totalSizeBytes)} stored",
+                                                fontWeight = FontWeight.Medium,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                            Text(
+                                                text = if (stats.isStealthSpace)
+                                                    "Stored in Google Drive's hidden appDataFolder."
+                                                else
+                                                    "Stored in My Drive > 'Vaulta Backups' folder.",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        } else {
+                                            Text(
+                                                text = "Tap refresh to calculate storage used on Google Drive.",
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            OutlinedButton(
+                                                onClick = {
+                                                    viewModel.fetchCloudStats()
+                                                    showCloudInspectorDialog = true
+                                                },
+                                                shape = RoundedCornerShape(10.dp),
+                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                                modifier = Modifier.height(32.dp)
+                                            ) {
+                                                Text("Inspect Files", fontSize = 11.sp)
+                                            }
+                                            OutlinedButton(
+                                                onClick = { showWipeConfirmDialog = true },
+                                                shape = RoundedCornerShape(10.dp),
+                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                                modifier = Modifier.height(32.dp)
+                                            ) {
+                                                Text("Wipe Cloud Backup", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                                            }
+                                        }
+                                    }
+                                },
+                                trailingContent = {
+                                    IconButton(onClick = { viewModel.fetchCloudStats() }) {
+                                        Icon(
+                                            imageVector = Icons.Default.Refresh,
+                                            contentDescription = "Refresh Cloud Stats",
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+                            )
+                        }
                     }
                 } else {
                     Text(
@@ -455,7 +576,116 @@ fun SettingsScreen(
                 Spacer(modifier = Modifier.height(16.dp))
             }
         }
+
+        if (showCloudInspectorDialog) {
+            val stats = cloudStorageStats
+            AlertDialog(
+                onDismissRequest = { showCloudInspectorDialog = false },
+                title = {
+                    Text(
+                        text = "Google Drive Backups",
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        if (stats == null || stats.blobs.isEmpty()) {
+                            Text(
+                                text = if (isFetchingCloudStats) "Querying Google Drive..." else "No remote backups found in active space.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            Text(
+                                text = "Active Space: ${if (stats.isStealthSpace) "Hidden appDataFolder" else "My Drive > Vaulta Backups"}\nTotal: ${stats.totalFiles} items • ${formatBytes(stats.totalSizeBytes)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            LazyColumn(modifier = Modifier.height(260.dp)) {
+                                items(stats.blobs.size) { index ->
+                                    val blob = stats.blobs[index]
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = blob.name,
+                                                fontWeight = FontWeight.SemiBold,
+                                                fontSize = 12.sp,
+                                                maxLines = 1
+                                            )
+                                            Text(
+                                                text = "${formatBytes(blob.sizeBytes)} • Encrypted Blob",
+                                                fontSize = 11.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        IconButton(
+                                            onClick = { viewModel.deleteRemoteBlob(blob.id) },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Delete,
+                                                contentDescription = "Delete from Cloud",
+                                                tint = MaterialTheme.colorScheme.error,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showCloudInspectorDialog = false }) {
+                        Text("Close")
+                    }
+                }
+            )
+        }
+
+        if (showWipeConfirmDialog) {
+            AlertDialog(
+                onDismissRequest = { showWipeConfirmDialog = false },
+                title = { Text("Wipe Cloud Backups?") },
+                text = {
+                    Text("This will permanently delete all encrypted files, blobs, and indexes stored on Google Drive in your active storage space.\n\nYour local files on this phone will remain completely safe.")
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showWipeConfirmDialog = false
+                            viewModel.wipeCloudStorage()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Text("Wipe Cloud Storage")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showWipeConfirmDialog = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
     }
+}
+
+private fun formatBytes(bytes: Long): String {
+    if (bytes <= 0) return "0 B"
+    val units = arrayOf("B", "KB", "MB", "GB", "TB")
+    val digitGroups = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt()
+    val value = bytes / Math.pow(1024.0, digitGroups.toDouble())
+    return String.format(java.util.Locale.US, "%.1f %s", value, units[digitGroups])
 }
 
 @Composable

@@ -261,7 +261,7 @@ class EncryptedIndexImpl @Inject constructor(
             val createdAt = dis.readLong()
             val modifiedAt = dis.readLong()
             val syncStatusStr = dis.readUTF()
-            val syncPolicyStr = if (isVersion3) dis.readUTF() else SyncPolicy.AUTO_SYNC.name
+            val syncPolicyStr = if (isVersion4 || isVersion3) dis.readUTF() else SyncPolicy.AUTO_SYNC.name
 
             val isBlobLocallyPresent = if (!blobName.isNullOrBlank() && !isDirectory) {
                 File(File(context.filesDir, "vaulta"), "blobs/$blobName").exists()

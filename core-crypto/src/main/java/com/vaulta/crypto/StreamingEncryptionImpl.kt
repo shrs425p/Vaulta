@@ -23,6 +23,7 @@ class StreamingEncryptionImpl @Inject constructor(
         const val STREAM_VERSION: Byte = 2
         const val STREAM_NONCE_PREFIX_SIZE: Int = 8
         const val CHUNK_DATA_SIZE: Int = CryptoConstants.CHUNK_SIZE_BYTES
+        const val MAX_CHUNK_LENGTH: Int = CHUNK_DATA_SIZE + 4 + CryptoConstants.TAG_SIZE_BYTES
     }
 
     override fun encryptStream(
@@ -116,6 +117,9 @@ class StreamingEncryptionImpl @Inject constructor(
 
         while (!input.exhausted()) {
             val chunkLength = input.readInt()
+            if (chunkLength < CryptoConstants.TAG_SIZE_BYTES || chunkLength > MAX_CHUNK_LENGTH) {
+                throw IOException("Corrupted chunk: invalid chunk length $chunkLength (expected ${CryptoConstants.TAG_SIZE_BYTES}..$MAX_CHUNK_LENGTH)")
+            }
             val isLast = input.readByte().toInt() == 1
             val ciphertextAndTag = input.readByteArray(chunkLength.toLong())
 
@@ -170,6 +174,9 @@ class StreamingEncryptionImpl @Inject constructor(
         version: Byte
     ): ByteArray {
         val chunkLength = input.readInt()
+        if (chunkLength < CryptoConstants.TAG_SIZE_BYTES || chunkLength > MAX_CHUNK_LENGTH) {
+            throw IOException("Corrupted chunk: invalid chunk length $chunkLength (expected ${CryptoConstants.TAG_SIZE_BYTES}..$MAX_CHUNK_LENGTH)")
+        }
         val isLast = input.readByte().toInt() == 1
         val ciphertextAndTag = input.readByteArray(chunkLength.toLong())
 

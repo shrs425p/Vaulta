@@ -7,6 +7,7 @@ interface SyncProvider {
     val isAvailable: Boolean
     val providerName: String
     suspend fun sync(): Result<Unit>
+    fun getSignedInEmail(): String? = null
     fun getSignInIntent(context: Context): Intent? = null
     fun handleSignInResult(data: Intent?): Result<String> = Result.failure(UnsupportedOperationException("Sign in not supported"))
     fun setManualAccount(email: String) {}
@@ -16,4 +17,7 @@ interface SyncProvider {
     suspend fun downloadSpecificBlob(id: String): Result<Unit> = Result.failure(UnsupportedOperationException())
     suspend fun removeRemoteBlob(id: String): Result<Unit> = Result.failure(UnsupportedOperationException())
     suspend fun downloadAllRemoteBlobs(): Result<Unit> = Result.failure(UnsupportedOperationException())
+    suspend fun getCloudStorageStats(): Result<CloudStorageStats> = Result.failure(UnsupportedOperationException())
+    suspend fun wipeCloudStorage(): Result<Unit> = Result.failure(UnsupportedOperationException())
+    suspend fun deleteRemoteBlobById(fileId: String): Result<Unit> = Result.failure(UnsupportedOperationException())
 }

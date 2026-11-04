@@ -18,6 +18,8 @@ import com.google.api.services.drive.Drive
 import com.google.api.services.drive.DriveScopes
 import com.google.api.services.drive.model.File as DriveFile
 import com.vaulta.vault.preferences.AppPreferencesManager
+import com.vaulta.vault.sync.CloudBlobInfo
+import com.vaulta.vault.sync.CloudStorageStats
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -169,7 +171,13 @@ class DriveSyncClientImpl @Inject constructor(
         }
         try {
             val folderId = getTargetParentFolderId(drive)
-            val remoteFile = findFileByName(drive, folderId, blobName)
+            var remoteFile = queryFileInSpace(drive, isStealthMode, folderId, blobName)
+            // Cross-space fallback: check alternate space in case blob was uploaded under the other storage mode
+            if (remoteFile == null) {
+                val altStealth = !isStealthMode
+                val altFolderId = if (altStealth) "appDataFolder" else getOrCreateVaultFolder(drive)
+                remoteFile = queryFileInSpace(drive, altStealth, altFolderId, blobName)
+            }
             if (remoteFile == null) {
                 lastError = "Remote blob $blobName not found on Google Drive"
                 return@withContext false
@@ -193,8 +201,17 @@ class DriveSyncClientImpl @Inject constructor(
         val drive = getDriveService() ?: return@withContext true
         try {
             val folderId = getTargetParentFolderId(drive)
-            val remoteFile = findFileByName(drive, folderId, blobName) ?: return@withContext true
-            drive.files().delete(remoteFile.id).execute()
+            val primaryFile = queryFileInSpace(drive, isStealthMode, folderId, blobName)
+            if (primaryFile != null) {
+                drive.files().delete(primaryFile.id).execute()
+            }
+            // Clean up from alternate space if present
+            val altStealth = !isStealthMode
+            val altFolderId = if (altStealth) "appDataFolder" else getOrCreateVaultFolder(drive)
+            val altFile = queryFileInSpace(drive, altStealth, altFolderId, blobName)
+            if (altFile != null) {
+                drive.files().delete(altFile.id).execute()
+            }
             lastError = null
             true
         } catch (e: Exception) {
@@ -232,7 +249,7 @@ class DriveSyncClientImpl @Inject constructor(
         }
     }
 
-    override suspend fun downloadIndex(): ByteArray? = withContext(Dispatchers.IO) {
+    override suspend fun downloadIndex(allowAutoDiscovery: Boolean): ByteArray? = withContext(Dispatchers.IO) {
         val drive = getDriveService()
         if (drive == null) {
             lastError = "Google Drive account is not signed in."
@@ -240,7 +257,22 @@ class DriveSyncClientImpl @Inject constructor(
         }
         try {
             val folderId = getTargetParentFolderId(drive)
-            val remoteFile = findFileByName(drive, folderId, INDEX_FILE_NAME)
+            var remoteFile = queryFileInSpace(drive, isStealthMode, folderId, INDEX_FILE_NAME)
+
+            // DUAL-SPACE AUTO-DISCOVERY:
+            // Only search alternate space if explicitly permitted (e.g. restoring an empty vault on a fresh install)
+            // Never override user's active choice during normal sync or manual space migration!
+            if (remoteFile == null && allowAutoDiscovery) {
+                val alternateStealth = !isStealthMode
+                val altFolderId = if (alternateStealth) "appDataFolder" else getOrCreateVaultFolder(drive)
+                val altFile = queryFileInSpace(drive, alternateStealth, altFolderId, INDEX_FILE_NAME)
+                if (altFile != null) {
+                    Log.i(TAG, "Vault index discovered in alternate space (Stealth=$alternateStealth). Auto-aligning mode.")
+                    appPreferencesManager.setIsStealthSyncEnabled(alternateStealth)
+                    remoteFile = altFile
+                }
+            }
+
             if (remoteFile == null) {
                 lastError = null
                 return@withContext null
@@ -258,6 +290,39 @@ class DriveSyncClientImpl @Inject constructor(
         }
     }
 
+    override suspend fun deleteOldStorageSpace(wasStealth: Boolean): Boolean = withContext(Dispatchers.IO) {
+        val drive = getDriveService() ?: return@withContext false
+        try {
+            if (wasStealth) {
+                // Old space was Stealth: remove index from appDataFolder
+                val list = drive.files().list()
+                    .setSpaces("appDataFolder")
+                    .setQ("name = '$INDEX_FILE_NAME' and 'appDataFolder' in parents and trashed = false")
+                    .setFields("files(id)")
+                    .execute()
+                list.files?.forEach { file ->
+                    try { drive.files().delete(file.id).execute() } catch (_: Exception) {}
+                }
+            } else {
+                // Old space was Visible: remove old Vaulta Backups folder
+                val query = "name = '$VAULT_FOLDER_NAME' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+                val result = drive.files().list()
+                    .setSpaces("drive")
+                    .setQ(query)
+                    .setFields("files(id)")
+                    .execute()
+                result.files?.forEach { folder ->
+                    try { drive.files().delete(folder.id).execute() } catch (_: Exception) {}
+                }
+                cachedFolderId = null
+            }
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed cleaning up old storage space (wasStealth=$wasStealth): ${e.message}")
+            false
+        }
+    }
+
     override suspend fun listRemoteBlobs(): List<String> = withContext(Dispatchers.IO) {
         val drive = getDriveService() ?: return@withContext emptyList()
         try {
@@ -268,17 +333,126 @@ class DriveSyncClientImpl @Inject constructor(
             } else {
                 "'$folderId' in parents and trashed = false"
             }
-            val list = drive.files().list()
+            var list = drive.files().list()
                 .setSpaces(space)
                 .setQ(query)
                 .setFields("files(id, name)")
                 .execute()
+                .files ?: emptyList()
+
+            // If active space has no files, check alternate space
+            if (list.isEmpty()) {
+                val altStealth = !isStealthMode
+                val altSpace = if (altStealth) "appDataFolder" else "drive"
+                val altFolderId = if (altStealth) "appDataFolder" else getOrCreateVaultFolder(drive)
+                val altQuery = if (altStealth) {
+                    "'appDataFolder' in parents and trashed = false"
+                } else {
+                    "'$altFolderId' in parents and trashed = false"
+                }
+                val altList = drive.files().list()
+                    .setSpaces(altSpace)
+                    .setQ(altQuery)
+                    .setFields("files(id, name)")
+                    .execute()
+                    .files ?: emptyList()
+                if (altList.isNotEmpty()) {
+                    list = altList
+                }
+            }
+
             lastError = null
-            list.files?.mapNotNull { it.name } ?: emptyList()
+            list.mapNotNull { it.name }
         } catch (e: Exception) {
             Log.e(TAG, "Failed listing remote files from Google Drive", e)
             handleApiError(e)
             emptyList()
+        }
+    }
+
+    override suspend fun deleteBlobById(fileId: String): Boolean = withContext(Dispatchers.IO) {
+        val drive = getDriveService() ?: return@withContext false
+        try {
+            drive.files().delete(fileId).execute()
+            lastError = null
+            true
+        } catch (e: Exception) {
+            handleApiError(e)
+            false
+        }
+    }
+
+    override suspend fun wipeCurrentStorage(): Boolean = withContext(Dispatchers.IO) {
+        val drive = getDriveService() ?: return@withContext false
+        try {
+            if (isStealthMode) {
+                val list = drive.files().list()
+                    .setSpaces("appDataFolder")
+                    .setQ("'appDataFolder' in parents and trashed = false")
+                    .setFields("files(id)")
+                    .execute()
+                list.files?.forEach { file ->
+                    try { drive.files().delete(file.id).execute() } catch (_: Exception) {}
+                }
+            } else {
+                val query = "name = '$VAULT_FOLDER_NAME' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+                val result = drive.files().list()
+                    .setSpaces("drive")
+                    .setQ(query)
+                    .setFields("files(id)")
+                    .execute()
+                result.files?.forEach { folder ->
+                    try { drive.files().delete(folder.id).execute() } catch (_: Exception) {}
+                }
+                cachedFolderId = null
+            }
+            lastError = null
+            true
+        } catch (e: Exception) {
+            handleApiError(e)
+            false
+        }
+    }
+
+    override suspend fun getCloudStorageStats(): CloudStorageStats? = withContext(Dispatchers.IO) {
+        val drive = getDriveService() ?: return@withContext null
+        try {
+            val space = if (isStealthMode) "appDataFolder" else "drive"
+            val folderId = if (isStealthMode) "appDataFolder" else getOrCreateVaultFolder(drive)
+            val query = if (isStealthMode) {
+                "'appDataFolder' in parents and trashed = false"
+            } else {
+                "'$folderId' in parents and trashed = false"
+            }
+            val result = drive.files().list()
+                .setSpaces(space)
+                .setQ(query)
+                .setFields("files(id, name, size, modifiedTime)")
+                .execute()
+
+            val files = result.files ?: emptyList()
+            var totalSize = 0L
+            val blobList = files.map { f ->
+                val size = f.getSize() ?: 0L
+                totalSize += size
+                val modTime = f.modifiedTime?.value ?: 0L
+                CloudBlobInfo(
+                    id = f.id,
+                    name = f.name ?: "Unknown",
+                    sizeBytes = size,
+                    modifiedTimeMs = modTime
+                )
+            }
+            lastError = null
+            CloudStorageStats(
+                totalFiles = blobList.size,
+                totalSizeBytes = totalSize,
+                isStealthSpace = isStealthMode,
+                blobs = blobList.sortedByDescending { it.sizeBytes }
+            )
+        } catch (e: Exception) {
+            handleApiError(e)
+            null
         }
     }
 
@@ -289,25 +463,7 @@ class DriveSyncClientImpl @Inject constructor(
     override suspend fun switchStorageSpace(toStealthMode: Boolean): Boolean = withContext(Dispatchers.IO) {
         val drive = getDriveService() ?: return@withContext false
         try {
-            if (toStealthMode) {
-                // Switching Visible -> Stealth: Clean up visible folder in drive space
-                cachedFolderId?.let { folderId ->
-                    try { drive.files().delete(folderId).execute() } catch (_: Exception) {}
-                }
-                cachedFolderId = null
-            } else {
-                // Switching Stealth -> Visible: Clean up old index in appDataFolder space
-                try {
-                    val list = drive.files().list()
-                        .setSpaces("appDataFolder")
-                        .setQ("name = '$INDEX_FILE_NAME' and 'appDataFolder' in parents and trashed = false")
-                        .setFields("files(id)")
-                        .execute()
-                    list.files?.firstOrNull()?.let { file ->
-                        drive.files().delete(file.id).execute()
-                    }
-                } catch (_: Exception) {}
-            }
+            cachedFolderId = null
             appPreferencesManager.setIsStealthSyncEnabled(toStealthMode)
             lastError = null
             true
@@ -321,6 +477,11 @@ class DriveSyncClientImpl @Inject constructor(
     override fun isSignedIn(): Boolean {
         if (isSessionInvalidated) return false
         return GoogleSignIn.getLastSignedInAccount(context) != null
+    }
+
+    override fun getSignedInEmail(): String? {
+        if (isSessionInvalidated) return null
+        return GoogleSignIn.getLastSignedInAccount(context)?.email
     }
 
     override fun getSignInIntent(): Intent {
@@ -374,9 +535,9 @@ class DriveSyncClientImpl @Inject constructor(
 
     override fun getLastError(): String? = lastError
 
-    private fun findFileByName(drive: Drive, folderId: String, name: String): DriveFile? {
-        val space = if (isStealthMode) "appDataFolder" else "drive"
-        val query = if (isStealthMode) {
+    private fun queryFileInSpace(drive: Drive, inStealth: Boolean, folderId: String, name: String): DriveFile? {
+        val space = if (inStealth) "appDataFolder" else "drive"
+        val query = if (inStealth) {
             "name = '$name' and 'appDataFolder' in parents and trashed = false"
         } else {
             "name = '$name' and '$folderId' in parents and trashed = false"
@@ -388,6 +549,10 @@ class DriveSyncClientImpl @Inject constructor(
             .setPageSize(1)
             .execute()
         return result.files?.firstOrNull()
+    }
+
+    private fun findFileByName(drive: Drive, folderId: String, name: String): DriveFile? {
+        return queryFileInSpace(drive, isStealthMode, folderId, name)
     }
 
     companion object {

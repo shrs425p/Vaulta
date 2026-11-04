@@ -39,10 +39,21 @@ captures/
 *.iml
 .idea/
 
-# Keystore files
-# Uncomment the following lines if you do not want to check your keystore files in.
-#*.jks
-#*.keystore
+# Keystore files and cryptographic keys
+*.jks
+*.keystore
+*.key
+*.key.bak
+*.p12
+*.pem
+*.secret
+*.ab
+
+# Test artifacts and local screenshots
+screen_clean.png
+test_backup.ab
+test_picker.png
+test_screencap.png
 
 # External native build folder generated in Android Studio 2.2 and later
 .cxx/

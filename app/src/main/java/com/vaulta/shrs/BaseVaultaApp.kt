@@ -2,29 +2,17 @@ package com.vaulta.shrs
 
 import android.app.Application
 import android.util.Log
-import androidx.hilt.work.HiltWorkerFactory
-import androidx.work.Configuration
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.request.CachePolicy
 import com.vaulta.storage.cleanup.ViewerCachePurge
 import com.vaulta.vault.session.AutoLockManager
-import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 
-@HiltAndroidApp
-class VaultaApp : Application(), Configuration.Provider, ImageLoaderFactory {
+abstract class BaseVaultaApp : Application(), ImageLoaderFactory {
 
     @Inject
     lateinit var autoLockManager: AutoLockManager
-
-    @Inject
-    lateinit var workerFactory: HiltWorkerFactory
-
-    override val workManagerConfiguration: Configuration
-        get() = Configuration.Builder()
-            .setWorkerFactory(workerFactory)
-            .build()
 
     override fun newImageLoader(): ImageLoader {
         // Zero-Knowledge Cache Policy: Disable Coil disk caching completely so decrypted
@@ -48,6 +36,7 @@ class VaultaApp : Application(), Configuration.Provider, ImageLoaderFactory {
         // Clean up any stale decrypted viewer and shared cache from previous ungraceful exits/crashes
         ViewerCachePurge.purgeViewerTemp(this)
 
+        // Initialize user-activity & lifecycle watcher for auto-lock
         autoLockManager.start()
     }
 }

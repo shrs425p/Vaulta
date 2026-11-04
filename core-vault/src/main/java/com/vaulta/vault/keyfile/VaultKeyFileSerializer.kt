@@ -100,6 +100,23 @@ class VaultKeyFileSerializerImpl @Inject constructor() : VaultKeyFileSerializer 
             val memoryCostKb = dis.readInt()
             val iterations = dis.readInt()
             val parallelism = dis.readInt()
+
+            if (memoryCostKb < MIN_ARGON2_MEMORY_KB) {
+                throw InvalidVaultKeyFileException(
+                    "Insecure Argon2 memory cost: $memoryCostKb KB (minimum required: $MIN_ARGON2_MEMORY_KB KB)"
+                )
+            }
+            if (iterations < MIN_ARGON2_ITERATIONS) {
+                throw InvalidVaultKeyFileException(
+                    "Insecure Argon2 iteration count: $iterations (minimum required: $MIN_ARGON2_ITERATIONS)"
+                )
+            }
+            if (parallelism < MIN_ARGON2_PARALLELISM) {
+                throw InvalidVaultKeyFileException(
+                    "Insecure Argon2 parallelism: $parallelism (minimum required: $MIN_ARGON2_PARALLELISM)"
+                )
+            }
+
             val argon2Params = Argon2Params(
                 memoryCostKb = memoryCostKb,
                 iterations = iterations,
@@ -148,11 +165,20 @@ class VaultKeyFileSerializerImpl @Inject constructor() : VaultKeyFileSerializer 
         }
     }
 
-    private companion object {
+    companion object {
         /** Expected salt size in bytes. */
         const val SALT_SIZE = 32
 
         /** Maximum allowed wrapped key slot size to guard against corrupted data. */
         const val MAX_SLOT_SIZE = 1024
+
+        /** Minimum acceptable Argon2 memory cost to prevent KDF parameter downgrade attacks (16 MB). */
+        const val MIN_ARGON2_MEMORY_KB = 16384
+
+        /** Minimum acceptable Argon2 iteration count. */
+        const val MIN_ARGON2_ITERATIONS = 1
+
+        /** Minimum acceptable Argon2 parallelism lane count. */
+        const val MIN_ARGON2_PARALLELISM = 1
     }
 }

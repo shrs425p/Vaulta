@@ -42,4 +42,34 @@ class VaultKeyFileSerializerTest {
             serializer.deserialize(corrupted)
         }
     }
+
+    @Test
+    fun deserialize_lowArgon2Memory_throwsInvalidVaultKeyFileException() {
+        val weak = VaultKeyFile(
+            argon2Params = Argon2Params(memoryCostKb = 8192, iterations = 3, parallelism = 4), // Below 16MB minimum
+            salt = ByteArray(32) { it.toByte() },
+            wrappedMasterKeySlotA = ByteArray(48) { 1 },
+            wrappedMasterKeySlotB = ByteArray(48) { 2 }
+        )
+
+        val serialized = serializer.serialize(weak)
+        assertThrows(InvalidVaultKeyFileException::class.java) {
+            serializer.deserialize(serialized)
+        }
+    }
+
+    @Test
+    fun deserialize_zeroArgon2Iterations_throwsInvalidVaultKeyFileException() {
+        val weak = VaultKeyFile(
+            argon2Params = Argon2Params(memoryCostKb = 65536, iterations = 0, parallelism = 4), // Below 1 iteration
+            salt = ByteArray(32) { it.toByte() },
+            wrappedMasterKeySlotA = ByteArray(48) { 1 },
+            wrappedMasterKeySlotB = ByteArray(48) { 2 }
+        )
+
+        val serialized = serializer.serialize(weak)
+        assertThrows(InvalidVaultKeyFileException::class.java) {
+            serializer.deserialize(serialized)
+        }
+    }
 }

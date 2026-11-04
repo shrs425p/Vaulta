@@ -26,4 +26,5 @@
     public static *** v(...);
     public static *** i(...);
     public static *** w(...);
+    public static *** e(...);
 }

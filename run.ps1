@@ -15,8 +15,12 @@ param (
 $ErrorActionPreference = "Stop"
 
 # Configure environment
-$env:JAVA_HOME = "C:\Program Files\Microsoft\jdk-17.0.21.21-hotspot"
-$env:Path = "$env:JAVA_HOME\bin;C:\Users\Shrs\AppData\Local\Android\Sdk\platform-tools;$env:Path"
+if (-not $env:ANDROID_HOME -and (Test-Path "$env:LOCALAPPDATA\Android\Sdk")) {
+    $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
+}
+if ($env:ANDROID_HOME) {
+    $env:Path = "$env:ANDROID_HOME\platform-tools;$env:Path"
+}
 
 # Check connected device
 $deviceLines = & adb devices | Out-String

@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.vaulta.crypto.SecureMemory
 import com.vaulta.storage.index.EncryptedIndex
 import com.vaulta.storage.index.VaultStats
+import com.vaulta.vault.sync.CloudStorageStats
 import com.vaulta.vault.sync.SyncProvider
 import com.vaulta.vault.VaultOperations
 import com.vaulta.vault.biometric.BiometricUnlockManager
@@ -49,6 +50,9 @@ class SettingsViewModel @Inject constructor(
     val isSyncAvailable: StateFlow<Boolean> = _isSyncAvailable.asStateFlow()
     val isSyncAvailableValue: Boolean get() = _isSyncAvailable.value
 
+    private val _signedInEmail = MutableStateFlow<String?>(syncProvider.getSignedInEmail())
+    val signedInEmail: StateFlow<String?> = _signedInEmail.asStateFlow()
+
     val syncProviderName: String
         get() = syncProvider.providerName
 
@@ -70,15 +74,67 @@ class SettingsViewModel @Inject constructor(
     private val _vaultStats = MutableStateFlow<VaultStats?>(null)
     val vaultStats: StateFlow<VaultStats?> = _vaultStats.asStateFlow()
 
+    private val _cloudStorageStats = MutableStateFlow<CloudStorageStats?>(null)
+    val cloudStorageStats: StateFlow<CloudStorageStats?> = _cloudStorageStats.asStateFlow()
+
+    private val _isFetchingCloudStats = MutableStateFlow(false)
+    val isFetchingCloudStats: StateFlow<Boolean> = _isFetchingCloudStats.asStateFlow()
+
     init {
         refreshStats()
+        fetchCloudStats()
     }
 
     fun refreshStats() {
+        _signedInEmail.value = syncProvider.getSignedInEmail()
         viewModelScope.launch {
             try {
                 _vaultStats.value = encryptedIndex.getVaultStats()
             } catch (_: Exception) {}
+        }
+    }
+
+    fun fetchCloudStats() {
+        if (!syncProvider.isAvailable) return
+        _isFetchingCloudStats.value = true
+        viewModelScope.launch {
+            try {
+                val result = syncProvider.getCloudStorageStats()
+                if (result.isSuccess) {
+                    _cloudStorageStats.value = result.getOrNull()
+                }
+            } catch (_: Exception) {
+            } finally {
+                _isFetchingCloudStats.value = false
+            }
+        }
+    }
+
+    fun wipeCloudStorage() {
+        if (!syncProvider.isAvailable) return
+        _uiState.value = SettingsUiState.Processing
+        viewModelScope.launch {
+            val result = syncProvider.wipeCloudStorage()
+            if (result.isSuccess) {
+                _cloudStorageStats.value = null
+                _uiState.value = SettingsUiState.Success("Cloud backup wiped cleanly from Google Drive")
+                fetchCloudStats()
+            } else {
+                _uiState.value = SettingsUiState.Error(result.exceptionOrNull()?.message ?: "Failed wiping cloud storage")
+            }
+        }
+    }
+
+    fun deleteRemoteBlob(fileId: String) {
+        if (!syncProvider.isAvailable) return
+        viewModelScope.launch {
+            val result = syncProvider.deleteRemoteBlobById(fileId)
+            if (result.isSuccess) {
+                _uiState.value = SettingsUiState.Success("File deleted from cloud storage")
+                fetchCloudStats()
+            } else {
+                _uiState.value = SettingsUiState.Error("Failed deleting file from cloud")
+            }
         }
     }
 
@@ -194,8 +250,10 @@ class SettingsViewModel @Inject constructor(
     fun handleSignInResult(data: android.content.Intent?) {
         val result = syncProvider.handleSignInResult(data)
         _isSyncAvailable.value = syncProvider.isAvailable
+        _signedInEmail.value = syncProvider.getSignedInEmail()
         if (result.isSuccess) {
             _uiState.value = SettingsUiState.Success("Signed in as ${result.getOrNull()}")
+            syncNow()
         } else {
             val errorMsg = result.exceptionOrNull()?.message ?: "Sign in failed"
             _uiState.value = SettingsUiState.Error(errorMsg)
@@ -205,11 +263,14 @@ class SettingsViewModel @Inject constructor(
     fun signOut() {
         syncProvider.signOut()
         _isSyncAvailable.value = syncProvider.isAvailable
+        _signedInEmail.value = null
+        _cloudStorageStats.value = null
         _uiState.value = SettingsUiState.Success("Signed out of Google Drive")
     }
 
     fun syncNow() {
         _isSyncAvailable.value = syncProvider.isAvailable
+        _signedInEmail.value = syncProvider.getSignedInEmail()
         if (!syncProvider.isAvailable) {
             _uiState.value = SettingsUiState.Error("Google Drive is not signed in. Tap Sign In first.")
             return
@@ -218,8 +279,10 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             val result = syncProvider.sync()
             _isSyncAvailable.value = syncProvider.isAvailable
+            _signedInEmail.value = syncProvider.getSignedInEmail()
             if (result.isSuccess) {
                 _uiState.value = SettingsUiState.Success("Cloud synchronization completed")
+                fetchCloudStats()
             } else {
                 _uiState.value = SettingsUiState.Error(
                     result.exceptionOrNull()?.message ?: "Sync failed"
