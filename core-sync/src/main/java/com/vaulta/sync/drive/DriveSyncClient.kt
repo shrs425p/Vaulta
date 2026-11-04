@@ -26,4 +26,10 @@ interface DriveSyncClient {
     fun setManualEmail(email: String)
 
     fun signOut(): Boolean
+
+    fun setStealthMode(enabled: Boolean)
+
+    suspend fun switchStorageSpace(toStealthMode: Boolean): Boolean
+
+    fun getLastError(): String? = null
 }

@@ -82,4 +82,33 @@ class SafAccessorImpl @Inject constructor(
         }
         return size
     }
+
+    override fun deleteOriginal(uri: Uri): Boolean {
+        return try {
+            android.provider.DocumentsContract.deleteDocument(context.contentResolver, uri)
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    override fun createNoMediaFile(folderUri: Uri): Boolean {
+        return try {
+            val docUri = if (android.provider.DocumentsContract.isTreeUri(folderUri)) {
+                android.provider.DocumentsContract.buildDocumentUriUsingTree(
+                    folderUri,
+                    android.provider.DocumentsContract.getTreeDocumentId(folderUri)
+                )
+            } else {
+                folderUri
+            }
+            android.provider.DocumentsContract.createDocument(
+                context.contentResolver,
+                docUri,
+                "*/*",
+                ".nomedia"
+            ) != null
+        } catch (_: Exception) {
+            false
+        }
+    }
 }

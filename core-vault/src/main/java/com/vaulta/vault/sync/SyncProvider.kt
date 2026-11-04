@@ -11,4 +11,9 @@ interface SyncProvider {
     fun handleSignInResult(data: Intent?): Result<String> = Result.failure(UnsupportedOperationException("Sign in not supported"))
     fun setManualAccount(email: String) {}
     fun signOut(): Boolean = false
+    fun setStealthMode(enabled: Boolean) {}
+    suspend fun switchStorageSpace(toStealthMode: Boolean): Boolean = false
+    suspend fun downloadSpecificBlob(id: String): Result<Unit> = Result.failure(UnsupportedOperationException())
+    suspend fun removeRemoteBlob(id: String): Result<Unit> = Result.failure(UnsupportedOperationException())
+    suspend fun downloadAllRemoteBlobs(): Result<Unit> = Result.failure(UnsupportedOperationException())
 }

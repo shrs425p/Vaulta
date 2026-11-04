@@ -24,9 +24,12 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -46,7 +49,12 @@ import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Code
+import com.vaulta.storage.index.SyncPolicy
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
@@ -65,11 +73,13 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material.icons.filled.VideoFile
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
@@ -142,6 +152,7 @@ fun BrowserScreen(
     val isGridView by viewModel.isGridView.collectAsStateWithLifecycle()
     val sortOption by viewModel.sortOption.collectAsStateWithLifecycle()
     val typeFilter by viewModel.typeFilter.collectAsStateWithLifecycle()
+    val pendingDeleteUris by viewModel.pendingDeleteUris.collectAsStateWithLifecycle()
 
     var showNewFolderDialog by remember { mutableStateOf(false) }
     var newFolderName by remember { mutableStateOf("") }
@@ -618,73 +629,126 @@ fun BrowserScreen(
         }
 
         // Auto-Organize Confirmation Dialog
+        // Auto-Organize Confirmation Dialog
         if (showAutoOrganizeDialog) {
-            AlertDialog(
-                onDismissRequest = { showAutoOrganizeDialog = false },
-                icon = {
-                    Icon(
-                        imageVector = Icons.Default.AutoAwesome,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(32.dp)
-                    )
-                },
-                title = {
-                    Text(
-                        text = "Auto-Organize Files",
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.titleLarge
-                    )
-                },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Dialog(onDismissRequest = { showAutoOrganizeDialog = false }) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp, vertical = 16.dp),
+                    shape = RoundedCornerShape(28.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primaryContainer),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
                         Text(
-                            text = "Automatically group loose files in ${if (parentId == null) "the vault root" else "this folder"} into category folders:",
-                            style = MaterialTheme.typography.bodyMedium
+                            text = "Auto-Organize Vault Files",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center
                         )
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
                         Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            shape = RoundedCornerShape(100.dp),
+                            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
+                        ) {
+                            Text(
+                                text = if (parentId == null) "Target: Vault Root" else "Target: Current Folder",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 4.dp)
+                                .heightIn(max = 280.dp)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Column(
-                                modifier = Modifier.padding(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                CategoryBullet(Icons.Default.Image, "Images", "Photos, wallpapers, screenshots")
-                                CategoryBullet(Icons.Default.VideoFile, "Videos", "Clips, movies, recordings")
-                                CategoryBullet(Icons.Default.AudioFile, "Audio", "Music, podcasts, voice recordings")
-                                CategoryBullet(Icons.Default.PictureAsPdf, "Documents", "PDFs, spreadsheets, CSVs, presentations")
-                                CategoryBullet(Icons.AutoMirrored.Filled.Article, "Text Documents", "Notes, markdown, logs")
-                                CategoryBullet(Icons.Default.Code, "Code & Scripts", "Source code, JSON, configs")
-                                CategoryBullet(Icons.Default.FolderZip, "Archives", "ZIP, 7z, TAR, APK")
-                            }
+                            CategoryRow(Icons.Default.Image, "Images", "Photos, wallpapers, screenshots")
+                            CategoryRow(Icons.Default.VideoFile, "Videos", "Clips, movies, recordings")
+                            CategoryRow(Icons.Default.AudioFile, "Audio", "Music, podcasts, voice notes")
+                            CategoryRow(Icons.Default.PictureAsPdf, "Documents", "PDFs, sheets, presentations")
+                            CategoryRow(Icons.AutoMirrored.Filled.Article, "Text Documents", "Notes, markdown, logs")
+                            CategoryRow(Icons.Default.Code, "Code & Scripts", "Source code, JSON, configs")
+                            CategoryRow(Icons.Default.FolderZip, "Archives", "ZIP, 7z, TAR, APK")
                         }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
                         Text(
-                            text = "Existing folders won't be modified. Files are organized securely with zero re-encryption delay.",
+                            text = "Loose files will be grouped into category folders. Existing folders will remain untouched.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
                         )
-                    }
-                },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            showAutoOrganizeDialog = false
-                            viewModel.autoOrganize(parentId)
+
+                        Spacer(modifier = Modifier.height(18.dp))
+
+                        Button(
+                            onClick = {
+                                showAutoOrganizeDialog = false
+                                viewModel.autoOrganize(parentId)
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Organize Now", fontWeight = FontWeight.Bold)
                         }
-                    ) {
-                        Text("Organize Now", fontWeight = FontWeight.SemiBold)
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showAutoOrganizeDialog = false }) {
-                        Text("Cancel")
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedButton(
+                            onClick = { showAutoOrganizeDialog = false },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(44.dp),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Text("Cancel")
+                        }
                     }
                 }
-            )
+            }
         }
 
         // Rename Dialog
@@ -839,34 +903,74 @@ fun BrowserScreen(
                 }
             )
         }
+
+        // Delete Original Unencrypted File Prompt
+        if (pendingDeleteUris.isNotEmpty()) {
+            AlertDialog(
+                onDismissRequest = { viewModel.dismissDeleteOriginals() },
+                title = { Text("Encryption Complete", fontWeight = FontWeight.Bold) },
+                text = {
+                    Text("File encrypted successfully! Do you want to delete the original file from your device?")
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = { viewModel.confirmDeleteOriginals() }
+                    ) {
+                        Text("Delete Original", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { viewModel.dismissDeleteOriginals() }
+                    ) {
+                        Text("Keep Original")
+                    }
+                }
+            )
+        }
     }
 }
 
 @Composable
-private fun CategoryBullet(icon: ImageVector, title: String, subtitle: String) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
+private fun CategoryRow(icon: ImageVector, title: String, subtitle: String) {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            modifier = Modifier.size(18.dp),
-            tint = MaterialTheme.colorScheme.primary
-        )
         Row(
-            modifier = Modifier.weight(1f),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(title, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }
@@ -962,18 +1066,62 @@ private fun EntryListItem(
                 )
             },
             headlineContent = {
-                Text(
-                    text = entry.name,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = entry.name,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    if (!entry.isDirectory && !entry.isAvailableLocally) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CloudDownload,
+                                    contentDescription = "Cloud Only",
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Text(
+                                    text = "Cloud",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        }
+                    } else if (!entry.isDirectory && entry.syncPolicy == SyncPolicy.LOCAL_ONLY) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.secondaryContainer
+                        ) {
+                            Text(
+                                text = "Local Only",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
             },
             supportingContent = {
                 val dateStr = SimpleDateFormat("MMM d, yyyy", Locale.getDefault()).format(Date(entry.modifiedAt))
                 val detail = if (entry.isDirectory) {
                     dateStr
+                } else if (!entry.isAvailableLocally) {
+                    "${formatFileSize(entry.sizeBytes)} • Cloud Only • Tap to download"
                 } else {
                     "${formatFileSize(entry.sizeBytes)} • $dateStr"
                 }
@@ -997,6 +1145,37 @@ private fun EntryListItem(
                         onDismissRequest = { showMenu = false },
                         shape = RoundedCornerShape(16.dp)
                     ) {
+                        if (!entry.isDirectory && !entry.isAvailableLocally) {
+                            DropdownMenuItem(
+                                text = { Text("Make Available Offline") },
+                                leadingIcon = { Icon(Icons.Default.CloudDownload, contentDescription = null) },
+                                onClick = {
+                                    showMenu = false
+                                    viewModel.downloadEntryLocally(entry.id)
+                                }
+                            )
+                        }
+                        if (!entry.isDirectory && entry.isAvailableLocally) {
+                            if (entry.syncPolicy == SyncPolicy.LOCAL_ONLY) {
+                                DropdownMenuItem(
+                                    text = { Text("Upload to Cloud") },
+                                    leadingIcon = { Icon(Icons.Default.CloudUpload, contentDescription = null) },
+                                    onClick = {
+                                        showMenu = false
+                                        viewModel.uploadEntryToCloud(entry.id)
+                                    }
+                                )
+                            } else {
+                                DropdownMenuItem(
+                                    text = { Text("Remove from Cloud (Keep Local)") },
+                                    leadingIcon = { Icon(Icons.Default.CloudOff, contentDescription = null) },
+                                    onClick = {
+                                        showMenu = false
+                                        viewModel.removeEntryFromCloud(entry.id)
+                                    }
+                                )
+                            }
+                        }
                         DropdownMenuItem(
                             text = { Text("Rename") },
                             leadingIcon = { Icon(Icons.Default.DriveFileRenameOutline, contentDescription = null) },
@@ -1013,7 +1192,7 @@ private fun EntryListItem(
                                 onMove()
                             }
                         )
-                        if (!entry.isDirectory) {
+                        if (!entry.isDirectory && entry.isAvailableLocally) {
                             DropdownMenuItem(
                                 text = { Text("Export Decrypted") },
                                 onClick = {

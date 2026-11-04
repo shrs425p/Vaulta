@@ -13,9 +13,6 @@
 -dontwarn org.ietf.jgss.**
 -dontwarn org.apache.http.**
 
-# Room
--keep class * extends androidx.room.RoomDatabase
-
 # AndroidX Biometric
 -keep class androidx.biometric.** { *; }
 
@@ -27,4 +24,6 @@
 -assumenosideeffects class android.util.Log {
     public static *** d(...);
     public static *** v(...);
+    public static *** i(...);
+    public static *** w(...);
 }

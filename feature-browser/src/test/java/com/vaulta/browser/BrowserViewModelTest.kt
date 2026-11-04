@@ -76,11 +76,15 @@ class BrowserViewModelTest {
     }
 
     private fun createViewModel(): BrowserViewModel {
+        val appPreferencesManager = mockk<com.vaulta.vault.preferences.AppPreferencesManager>(relaxed = true)
+        val syncProvider = mockk<com.vaulta.vault.sync.SyncProvider>(relaxed = true)
         return BrowserViewModel(
             encryptedIndex = encryptedIndex,
             blobStore = blobStore,
             safAccessor = safAccessor,
             keyDerivation = keyDerivation,
+            appPreferencesManager = appPreferencesManager,
+            syncProvider = syncProvider,
             vaultSession = vaultSession
         ).apply {
             ioDispatcher = testDispatcher

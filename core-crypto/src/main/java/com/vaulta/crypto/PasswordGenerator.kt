@@ -2,14 +2,20 @@ package com.vaulta.crypto
 
 import java.security.SecureRandom
 import kotlin.math.log2
-import kotlin.math.pow
 
 enum class PasswordStrength(val label: String, val score: Float) {
-    WEAK("Weak", 0.25f),
-    FAIR("Fair", 0.50f),
-    STRONG("Strong", 0.75f),
+    VERY_WEAK("Very Weak", 0.15f),
+    WEAK("Weak", 0.30f),
+    FAIR("Fair", 0.55f),
+    STRONG("Strong", 0.80f),
     VERY_STRONG("Very Strong", 1.0f)
 }
+
+data class PasswordAnalysis(
+    val entropyBits: Double,
+    val strength: PasswordStrength,
+    val crackTimeDisplay: String
+)
 
 object PasswordGenerator {
 
@@ -19,6 +25,7 @@ object PasswordGenerator {
     private const val UPPERCASE = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     private const val DIGITS = "0123456789"
     private const val SYMBOLS = "!@#$%^&*()_+-=[]{}|;:,.<>?"
+    private const val AMBIGUOUS = "l1IO0"
 
     private val WORD_LIST = listOf(
         "vault", "secure", "argon", "cipher", "anchor", "beacon", "castle", "dragon",
@@ -35,13 +42,26 @@ object PasswordGenerator {
         includeUpper: Boolean = true,
         includeLower: Boolean = true,
         includeDigits: Boolean = true,
-        includeSymbols: Boolean = true
+        includeSymbols: Boolean = true,
+        avoidAmbiguous: Boolean = false
     ): String {
+        var lower = LOWERCASE
+        var upper = UPPERCASE
+        var digits = DIGITS
+        var symbols = SYMBOLS
+
+        if (avoidAmbiguous) {
+            lower = lower.filterNot { it in AMBIGUOUS }
+            upper = upper.filterNot { it in AMBIGUOUS }
+            digits = digits.filterNot { it in AMBIGUOUS }
+            symbols = symbols.filterNot { it in AMBIGUOUS }
+        }
+
         val charset = StringBuilder().apply {
-            if (includeLower) append(LOWERCASE)
-            if (includeUpper) append(UPPERCASE)
-            if (includeDigits) append(DIGITS)
-            if (includeSymbols) append(SYMBOLS)
+            if (includeLower) append(lower)
+            if (includeUpper) append(upper)
+            if (includeDigits) append(digits)
+            if (includeSymbols) append(symbols)
         }.toString()
 
         if (charset.isEmpty()) return ""
@@ -59,8 +79,8 @@ object PasswordGenerator {
         return selectedWords.joinToString(separator)
     }
 
-    fun calculateStrength(password: String): PasswordStrength {
-        if (password.isBlank()) return PasswordStrength.WEAK
+    fun calculateEntropyBits(password: String): Double {
+        if (password.isEmpty()) return 0.0
 
         var poolSize = 0
         if (password.any { it.isLowerCase() }) poolSize += LOWERCASE.length
@@ -70,13 +90,45 @@ object PasswordGenerator {
 
         if (poolSize == 0) poolSize = 26
 
-        val entropy = password.length * log2(poolSize.toDouble())
+        return password.length * log2(poolSize.toDouble())
+    }
 
-        return when {
-            entropy < 36 -> PasswordStrength.WEAK
-            entropy < 60 -> PasswordStrength.FAIR
-            entropy < 80 -> PasswordStrength.STRONG
+    fun analyzePassword(password: String): PasswordAnalysis {
+        val bits = calculateEntropyBits(password)
+        val strength = when {
+            bits < 28 -> PasswordStrength.VERY_WEAK
+            bits < 40 -> PasswordStrength.WEAK
+            bits < 60 -> PasswordStrength.FAIR
+            bits < 80 -> PasswordStrength.STRONG
             else -> PasswordStrength.VERY_STRONG
         }
+
+        val crackTime = calculateCrackTimeDisplay(bits)
+        return PasswordAnalysis(
+            entropyBits = (bits * 10.0).let { Math.round(it) / 10.0 },
+            strength = strength,
+            crackTimeDisplay = crackTime
+        )
+    }
+
+    private fun calculateCrackTimeDisplay(entropyBits: Double): String {
+        if (entropyBits <= 0) return "Instant"
+        val combinations = Math.pow(2.0, entropyBits)
+        val seconds = combinations / 10_000_000_000.0
+
+        return when {
+            seconds < 1 -> "Instant"
+            seconds < 60 -> "${seconds.toInt()} seconds"
+            seconds < 3600 -> "${(seconds / 60).toInt()} minutes"
+            seconds < 86400 -> "${(seconds / 3600).toInt()} hours"
+            seconds < 2592000 -> "${(seconds / 86400).toInt()} days"
+            seconds < 31536000 -> "${(seconds / 2592000).toInt()} months"
+            seconds < 3153600000.0 -> "${(seconds / 31536000).toInt()} years"
+            else -> "Centuries"
+        }
+    }
+
+    fun calculateStrength(password: String): PasswordStrength {
+        return analyzePassword(password).strength
     }
 }

@@ -45,8 +45,9 @@ class SettingsViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<SettingsUiState>(SettingsUiState.Idle)
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
-    val isSyncAvailable: Boolean
-        get() = syncProvider.isAvailable
+    private val _isSyncAvailable = MutableStateFlow(syncProvider.isAvailable)
+    val isSyncAvailable: StateFlow<Boolean> = _isSyncAvailable.asStateFlow()
+    val isSyncAvailableValue: Boolean get() = _isSyncAvailable.value
 
     val syncProviderName: String
         get() = syncProvider.providerName
@@ -60,6 +61,9 @@ class SettingsViewModel @Inject constructor(
     val isBiometricEnabled: StateFlow<Boolean> = _isBiometricEnabled.asStateFlow()
 
     val isScreenProtectionEnabled: StateFlow<Boolean> = appPreferencesManager.isScreenProtectionEnabled
+    val deleteOriginalAfterImport: StateFlow<Boolean> = appPreferencesManager.deleteOriginalAfterImport
+    val defaultSyncPolicy: StateFlow<com.vaulta.vault.preferences.DefaultSyncPolicy> = appPreferencesManager.defaultSyncPolicy
+    val isStealthSyncEnabled: StateFlow<Boolean> = appPreferencesManager.isStealthSyncEnabled
     val themeMode: StateFlow<AppThemeMode> = appPreferencesManager.themeMode
     val themeStyle: StateFlow<AppThemeStyle> = appPreferencesManager.themeStyle
 
@@ -80,6 +84,33 @@ class SettingsViewModel @Inject constructor(
 
     fun setScreenProtectionEnabled(enabled: Boolean) {
         appPreferencesManager.setScreenProtectionEnabled(enabled)
+    }
+
+    fun setDeleteOriginalAfterImport(enabled: Boolean) {
+        appPreferencesManager.setDeleteOriginalAfterImport(enabled)
+    }
+
+    fun setDefaultSyncPolicy(policy: com.vaulta.vault.preferences.DefaultSyncPolicy) {
+        appPreferencesManager.setDefaultSyncPolicy(policy)
+    }
+
+    fun setStealthSyncEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            _uiState.value = SettingsUiState.Processing
+            val switched = syncProvider.switchStorageSpace(enabled)
+            if (switched) {
+                appPreferencesManager.setIsStealthSyncEnabled(enabled)
+                val msg = if (enabled) {
+                    "Stealth Cloud Backup enabled! Backups moved to Google Drive's hidden appDataFolder."
+                } else {
+                    "Visible Cloud Backup enabled! Backups moved to 'Vaulta Backups'."
+                }
+                _uiState.value = SettingsUiState.Success(msg)
+                syncNow()
+            } else {
+                _uiState.value = SettingsUiState.Error("Failed switching storage space on Google Drive")
+            }
+        }
     }
 
     fun setThemeMode(mode: AppThemeMode) {
@@ -162,6 +193,7 @@ class SettingsViewModel @Inject constructor(
 
     fun handleSignInResult(data: android.content.Intent?) {
         val result = syncProvider.handleSignInResult(data)
+        _isSyncAvailable.value = syncProvider.isAvailable
         if (result.isSuccess) {
             _uiState.value = SettingsUiState.Success("Signed in as ${result.getOrNull()}")
         } else {
@@ -172,17 +204,20 @@ class SettingsViewModel @Inject constructor(
 
     fun signOut() {
         syncProvider.signOut()
+        _isSyncAvailable.value = syncProvider.isAvailable
         _uiState.value = SettingsUiState.Success("Signed out of Google Drive")
     }
 
     fun syncNow() {
+        _isSyncAvailable.value = syncProvider.isAvailable
         if (!syncProvider.isAvailable) {
-            _uiState.value = SettingsUiState.Error("Sync is disabled in this edition")
+            _uiState.value = SettingsUiState.Error("Google Drive is not signed in. Tap Sign In first.")
             return
         }
         _uiState.value = SettingsUiState.Processing
         viewModelScope.launch {
             val result = syncProvider.sync()
+            _isSyncAvailable.value = syncProvider.isAvailable
             if (result.isSuccess) {
                 _uiState.value = SettingsUiState.Success("Cloud synchronization completed")
             } else {

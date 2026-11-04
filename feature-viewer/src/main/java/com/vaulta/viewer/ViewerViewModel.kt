@@ -87,6 +87,7 @@ class ViewerViewModel @Inject constructor(
     private val encryptedIndex: EncryptedIndex,
     private val blobStore: BlobStore,
     private val keyDerivation: KeyDerivation,
+    private val syncProvider: com.vaulta.vault.sync.SyncProvider,
     private val vaultSession: VaultSession
 ) : ViewModel() {
 
@@ -133,6 +134,16 @@ class ViewerViewModel @Inject constructor(
 
                 val entry = encryptedIndex.getEntry(entryId)
                     ?: throw IllegalArgumentException("File entry not found in index")
+
+                if (!entry.isAvailableLocally) {
+                    Log.d("VaultaViewer", "File '${entry.name}' is cloud-only. Downloading blob on-demand...")
+                    val downloadRes = syncProvider.downloadSpecificBlob(entry.id)
+                    if (downloadRes.isFailure) {
+                        val msg = downloadRes.exceptionOrNull()?.message ?: "Failed downloading cloud blob"
+                        _uiState.value = ViewerUiState.Error("Cloud Download Error: $msg")
+                        return@launch
+                    }
+                }
 
                 val blobName = entry.blobName
                     ?: throw IllegalArgumentException("File has no associated blob")

@@ -14,6 +14,11 @@ enum class AppThemeMode(val label: String) {
     DARK("Dark")
 }
 
+enum class DefaultSyncPolicy(val displayName: String, val description: String) {
+    SYNC_ALL("Sync All Files Automatically", "Newly imported files are uploaded to Google Drive during sync runs."),
+    SELECTIVE_MANUAL("Only Sync Selected Files", "Newly imported files remain local-only until explicitly marked for cloud upload.")
+}
+
 enum class AppThemeStyle(
     val displayName: String,
     val primaryColorHex: Long,
@@ -130,9 +135,43 @@ class AppPreferencesManager @Inject constructor(
     )
     val autoLockTimeoutMinutes: StateFlow<Int> = _autoLockTimeoutMinutes.asStateFlow()
 
+    private val _deleteOriginalAfterImport = MutableStateFlow(
+        prefs.getBoolean(KEY_DELETE_ORIGINAL_AFTER_IMPORT, false)
+    )
+    val deleteOriginalAfterImport: StateFlow<Boolean> = _deleteOriginalAfterImport.asStateFlow()
+
+    private val _isStealthSyncEnabled = MutableStateFlow(
+        prefs.getBoolean(KEY_STEALTH_SYNC_ENABLED, false)
+    )
+    val isStealthSyncEnabled: StateFlow<Boolean> = _isStealthSyncEnabled.asStateFlow()
+
+    private val _defaultSyncPolicy = MutableStateFlow(
+        try {
+            DefaultSyncPolicy.valueOf(prefs.getString(KEY_DEFAULT_SYNC_POLICY, DefaultSyncPolicy.SYNC_ALL.name) ?: DefaultSyncPolicy.SYNC_ALL.name)
+        } catch (_: Exception) {
+            DefaultSyncPolicy.SYNC_ALL
+        }
+    )
+    val defaultSyncPolicy: StateFlow<DefaultSyncPolicy> = _defaultSyncPolicy.asStateFlow()
+
     fun setAutoLockTimeoutMinutes(minutes: Int) {
         _autoLockTimeoutMinutes.value = minutes
         prefs.edit().putInt(KEY_AUTO_LOCK_TIMEOUT_MINUTES, minutes).apply()
+    }
+
+    fun setDeleteOriginalAfterImport(enabled: Boolean) {
+        _deleteOriginalAfterImport.value = enabled
+        prefs.edit().putBoolean(KEY_DELETE_ORIGINAL_AFTER_IMPORT, enabled).apply()
+    }
+
+    fun setIsStealthSyncEnabled(enabled: Boolean) {
+        _isStealthSyncEnabled.value = enabled
+        prefs.edit().putBoolean(KEY_STEALTH_SYNC_ENABLED, enabled).apply()
+    }
+
+    fun setDefaultSyncPolicy(policy: DefaultSyncPolicy) {
+        _defaultSyncPolicy.value = policy
+        prefs.edit().putString(KEY_DEFAULT_SYNC_POLICY, policy.name).apply()
     }
 
     fun setScreenProtectionEnabled(enabled: Boolean) {
@@ -155,5 +194,8 @@ class AppPreferencesManager @Inject constructor(
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_THEME_STYLE = "theme_style"
         private const val KEY_AUTO_LOCK_TIMEOUT_MINUTES = "auto_lock_timeout_minutes"
+        private const val KEY_DELETE_ORIGINAL_AFTER_IMPORT = "delete_original_after_import"
+        private const val KEY_STEALTH_SYNC_ENABLED = "stealth_sync_enabled"
+        private const val KEY_DEFAULT_SYNC_POLICY = "default_sync_policy"
     }
 }

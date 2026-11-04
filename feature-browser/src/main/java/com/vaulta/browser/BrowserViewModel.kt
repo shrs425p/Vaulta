@@ -11,6 +11,7 @@ import com.vaulta.crypto.KeyDerivation
 import com.vaulta.crypto.SecureMemory
 import com.vaulta.storage.blob.BlobStore
 import com.vaulta.storage.index.EncryptedIndex
+import com.vaulta.storage.index.SyncPolicy
 import com.vaulta.storage.index.SyncStatus
 import com.vaulta.storage.index.VaultEntry
 import com.vaulta.storage.saf.SafAccessor
@@ -76,6 +77,8 @@ class BrowserViewModel @Inject constructor(
     private val blobStore: BlobStore,
     private val safAccessor: SafAccessor,
     private val keyDerivation: KeyDerivation,
+    private val appPreferencesManager: com.vaulta.vault.preferences.AppPreferencesManager,
+    private val syncProvider: com.vaulta.vault.sync.SyncProvider,
     val vaultSession: VaultSession
 ) : ViewModel() {
 
@@ -96,6 +99,9 @@ class BrowserViewModel @Inject constructor(
 
     private val _userMessage = MutableStateFlow<String?>(null)
     val userMessage: StateFlow<String?> = _userMessage.asStateFlow()
+
+    private val _pendingDeleteUris = MutableStateFlow<List<Uri>>(emptyList())
+    val pendingDeleteUris: StateFlow<List<Uri>> = _pendingDeleteUris.asStateFlow()
 
     private val _isGridView = MutableStateFlow(false)
     val isGridView: StateFlow<Boolean> = _isGridView.asStateFlow()
@@ -362,6 +368,12 @@ class BrowserViewModel @Inject constructor(
                             SecureMemory.wipe(fileKey)
                         }
 
+                        val initialPolicy = if (appPreferencesManager.defaultSyncPolicy.value == com.vaulta.vault.preferences.DefaultSyncPolicy.SELECTIVE_MANUAL) {
+                            SyncPolicy.LOCAL_ONLY
+                        } else {
+                            SyncPolicy.AUTO_SYNC
+                        }
+
                         val entry = VaultEntry(
                             id = UUID.randomUUID().toString(),
                             name = fileName,
@@ -373,7 +385,9 @@ class BrowserViewModel @Inject constructor(
                             fileSalt = fileSalt,
                             createdAt = System.currentTimeMillis(),
                             modifiedAt = System.currentTimeMillis(),
-                            syncStatus = SyncStatus.PENDING
+                            syncStatus = SyncStatus.PENDING,
+                            syncPolicy = initialPolicy,
+                            isAvailableLocally = true
                         )
                         encryptedIndex.addEntry(entry)
                         Log.d("VaultaBrowser", "✅ File '$fileName' ($fileSize bytes) encrypted and added to vault successfully!")
@@ -381,6 +395,11 @@ class BrowserViewModel @Inject constructor(
                 }
                 vaultSession.withMasterKey { masterKey ->
                     encryptedIndex.saveIndex(masterKey)
+                }
+                if (appPreferencesManager.deleteOriginalAfterImport.value) {
+                    deleteOriginalsList(uris)
+                } else {
+                    _pendingDeleteUris.value = uris
                 }
             } catch (e: Exception) {
                 Log.e("VaultaBrowser", "❌ Failed to encrypt and import files", e)
@@ -390,6 +409,115 @@ class BrowserViewModel @Inject constructor(
                 _isLoading.value = false
             }
         }
+    }
+
+    fun confirmDeleteOriginals() {
+        val uris = _pendingDeleteUris.value
+        _pendingDeleteUris.value = emptyList()
+        deleteOriginalsList(uris)
+    }
+
+    private fun deleteOriginalsList(uris: List<Uri>) {
+        viewModelScope.launch(ioDispatcher) {
+            var count = 0
+            for (uri in uris) {
+                val deleted = safAccessor.deleteOriginal(uri)
+                if (deleted) count++
+            }
+            if (count > 0) {
+                _userMessage.value = "$count original file(s) deleted from device"
+            } else {
+                _userMessage.value = "Original file is on external storage and could not be auto-deleted"
+            }
+        }
+    }
+
+    fun createNoMediaShield(folderUri: Uri) {
+        viewModelScope.launch(ioDispatcher) {
+            val created = safAccessor.createNoMediaFile(folderUri)
+            if (created) {
+                _userMessage.value = "Created .nomedia shield! MediaScanner will now skip this folder."
+            } else {
+                _error.value = "Failed to create .nomedia file in selected folder"
+            }
+        }
+    }
+
+    fun uploadEntryToCloud(id: String) {
+        viewModelScope.launch(ioDispatcher) {
+            try {
+                val entry = encryptedIndex.getEntry(id) ?: return@launch
+                val updated = entry.copy(
+                    syncPolicy = SyncPolicy.AUTO_SYNC,
+                    syncStatus = SyncStatus.PENDING
+                )
+                encryptedIndex.updateEntry(updated)
+                vaultSession.withMasterKey { masterKey ->
+                    encryptedIndex.saveIndex(masterKey)
+                }
+                _userMessage.value = "Marked '${entry.name}' for cloud upload"
+                syncProvider.sync()
+            } catch (e: Exception) {
+                _error.value = "Failed to mark for cloud upload: ${e.message}"
+            }
+        }
+    }
+
+    fun removeEntryFromCloud(id: String) {
+        viewModelScope.launch(ioDispatcher) {
+            try {
+                val entry = encryptedIndex.getEntry(id) ?: return@launch
+                val res = syncProvider.removeRemoteBlob(id)
+                if (res.isSuccess) {
+                    _userMessage.value = "'${entry.name}' removed from cloud (kept local)"
+                } else {
+                    _error.value = "Failed removing from cloud: ${res.exceptionOrNull()?.message}"
+                }
+            } catch (e: Exception) {
+                _error.value = "Failed removing from cloud: ${e.message}"
+            }
+        }
+    }
+
+    fun downloadEntryLocally(id: String) {
+        viewModelScope.launch(ioDispatcher) {
+            try {
+                _isLoading.value = true
+                val entry = encryptedIndex.getEntry(id) ?: return@launch
+                val res = syncProvider.downloadSpecificBlob(id)
+                if (res.isSuccess) {
+                    _userMessage.value = "'${entry.name}' downloaded and available offline"
+                } else {
+                    _error.value = "Failed downloading: ${res.exceptionOrNull()?.message}"
+                }
+            } catch (e: Exception) {
+                _error.value = "Failed downloading: ${e.message}"
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    fun downloadAllCloudFiles() {
+        viewModelScope.launch(ioDispatcher) {
+            try {
+                _isLoading.value = true
+                val res = syncProvider.downloadAllRemoteBlobs()
+                if (res.isSuccess) {
+                    _userMessage.value = "All cloud files downloaded for offline use"
+                } else {
+                    _error.value = "Failed batch downloading: ${res.exceptionOrNull()?.message}"
+                }
+            } catch (e: Exception) {
+                _error.value = "Failed batch downloading: ${e.message}"
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    fun dismissDeleteOriginals() {
+        _pendingDeleteUris.value = emptyList()
     }
 
     fun renameEntry(id: String, newName: String) {

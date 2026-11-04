@@ -7,6 +7,11 @@ enum class SyncStatus {
     CONFLICT
 }
 
+enum class SyncPolicy {
+    AUTO_SYNC,
+    LOCAL_ONLY
+}
+
 data class VaultEntry(
     val id: String,
     val name: String,
@@ -18,7 +23,9 @@ data class VaultEntry(
     val fileSalt: ByteArray?,
     val createdAt: Long,
     val modifiedAt: Long,
-    val syncStatus: SyncStatus = SyncStatus.PENDING
+    val syncStatus: SyncStatus = SyncStatus.PENDING,
+    val syncPolicy: SyncPolicy = SyncPolicy.AUTO_SYNC,
+    val isAvailableLocally: Boolean = true
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -38,6 +45,8 @@ data class VaultEntry(
         if (createdAt != other.createdAt) return false
         if (modifiedAt != other.modifiedAt) return false
         if (syncStatus != other.syncStatus) return false
+        if (syncPolicy != other.syncPolicy) return false
+        if (isAvailableLocally != other.isAvailableLocally) return false
 
         return true
     }
@@ -54,6 +63,8 @@ data class VaultEntry(
         result = 31 * result + createdAt.hashCode()
         result = 31 * result + modifiedAt.hashCode()
         result = 31 * result + syncStatus.hashCode()
+        result = 31 * result + syncPolicy.hashCode()
+        result = 31 * result + isAvailableLocally.hashCode()
         return result
     }
 }

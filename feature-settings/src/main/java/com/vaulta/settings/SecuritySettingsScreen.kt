@@ -21,6 +21,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Memory
@@ -74,6 +76,8 @@ fun SecuritySettingsScreen(
     viewModel: SettingsViewModel
 ) {
     val isScreenProtectionEnabled by viewModel.isScreenProtectionEnabled.collectAsStateWithLifecycle()
+    val isDeleteOriginalEnabled by viewModel.deleteOriginalAfterImport.collectAsStateWithLifecycle()
+    val defaultSyncPolicy by viewModel.defaultSyncPolicy.collectAsStateWithLifecycle()
     val isBiometricEnabled by viewModel.isBiometricEnabled.collectAsStateWithLifecycle()
     val timeoutMinutes by viewModel.autoLockTimeoutMinutes.collectAsStateWithLifecycle()
 
@@ -159,6 +163,94 @@ fun SecuritySettingsScreen(
                                 checked = isScreenProtectionEnabled,
                                 onCheckedChange = { viewModel.setScreenProtectionEnabled(it) }
                             )
+                        }
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                    ListItem(
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        leadingContent = {
+                            Box(
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        if (isDeleteOriginalEnabled) MaterialTheme.colorScheme.primaryContainer
+                                        else MaterialTheme.colorScheme.surfaceVariant
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = null,
+                                    tint = if (isDeleteOriginalEnabled) MaterialTheme.colorScheme.onPrimaryContainer
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        },
+                        headlineContent = {
+                            Text("Always Delete Original Files", fontWeight = FontWeight.SemiBold)
+                        },
+                        supportingContent = {
+                            Text(
+                                text = if (isDeleteOriginalEnabled)
+                                    "ACTIVE • Unencrypted original files are automatically deleted after encryption."
+                                else
+                                    "PROMPT • App prompts after each import asking whether to delete or keep the original.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        },
+                        trailingContent = {
+                            Switch(
+                                checked = isDeleteOriginalEnabled,
+                                onCheckedChange = { viewModel.setDeleteOriginalAfterImport(it) }
+                            )
+                        }
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                    ListItem(
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        leadingContent = {
+                            Box(
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(MaterialTheme.colorScheme.primaryContainer),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CloudSync,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        },
+                        headlineContent = {
+                            Text("Default Cloud Sync Policy", fontWeight = FontWeight.SemiBold)
+                        },
+                        supportingContent = {
+                            Text(
+                                text = defaultSyncPolicy.description,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        },
+                        trailingContent = {
+                            TextButton(
+                                onClick = {
+                                    val newPolicy = if (defaultSyncPolicy == com.vaulta.vault.preferences.DefaultSyncPolicy.SYNC_ALL) {
+                                        com.vaulta.vault.preferences.DefaultSyncPolicy.SELECTIVE_MANUAL
+                                    } else {
+                                        com.vaulta.vault.preferences.DefaultSyncPolicy.SYNC_ALL
+                                    }
+                                    viewModel.setDefaultSyncPolicy(newPolicy)
+                                }
+                            ) {
+                                Text(
+                                    if (defaultSyncPolicy == com.vaulta.vault.preferences.DefaultSyncPolicy.SYNC_ALL) "Sync All" else "Selective",
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                     )
                 }
@@ -359,7 +451,7 @@ fun SecuritySettingsScreen(
                             },
                             supportingContent = {
                                 Text(
-                                    text = if (viewModel.isSyncAvailable)
+                                    text = if (viewModel.isSyncAvailableValue)
                                         "Zero-Knowledge Google Drive sync active. Plaintext is never transmitted."
                                     else
                                         "Google Drive account is not signed in. Tap in Settings to authenticate.",

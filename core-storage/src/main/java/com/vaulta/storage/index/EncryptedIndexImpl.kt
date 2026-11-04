@@ -6,6 +6,8 @@ import android.util.Log
 import com.vaulta.crypto.KeyWrapping
 import com.vaulta.storage.credentials.CredentialCategory
 import com.vaulta.storage.credentials.CredentialEntity
+import com.vaulta.storage.credentials.CredentialTemplate
+import com.vaulta.storage.credentials.PasswordHistoryEntry
 import com.vaulta.storage.credentials.VaultCredential
 import com.vaulta.storage.credentials.toDomain
 import com.vaulta.storage.credentials.toEntity
@@ -118,85 +120,80 @@ class EncryptedIndexImpl @Inject constructor(
                         java.nio.file.StandardCopyOption.ATOMIC_MOVE
                     )
                     true
-                } catch (_: Exception) {
-                    tempFile.renameTo(indexFile)
-                }
-
-                if (!moved && tempFile.exists()) {
+                } catch (e: Exception) {
                     tempFile.copyTo(indexFile, overwrite = true)
                     tempFile.delete()
+                    true
                 }
-                Log.d(TAG, "Saved encrypted index (${encryptedData.size} bytes) atomically to disk")
+                if (moved) {
+                    Log.d(TAG, "Saved encrypted index (${encryptedData.size} bytes) atomically to disk")
+                }
             }
         }
     }
 
-    private suspend fun migrateLegacyDatabase(legacyDbFile: File) {
+    private suspend fun migrateLegacyDatabase(dbFile: File) {
         var db: SQLiteDatabase? = null
         try {
-            db = SQLiteDatabase.openDatabase(
-                legacyDbFile.absolutePath,
-                null,
-                SQLiteDatabase.OPEN_READONLY
-            )
-            val cursor = db.rawQuery(
-                "SELECT id, name, parentId, isDirectory, mimeType, sizeBytes, blobName, fileSaltBase64, createdAt, modifiedAt, syncStatus FROM vault_entries",
-                null
-            )
-            val migratedEntities = mutableListOf<VaultEntryEntity>()
-            cursor.use { c ->
-                val idIdx = c.getColumnIndexOrThrow("id")
-                val nameIdx = c.getColumnIndexOrThrow("name")
-                val parentIdIdx = c.getColumnIndexOrThrow("parentId")
-                val isDirIdx = c.getColumnIndexOrThrow("isDirectory")
-                val mimeIdx = c.getColumnIndexOrThrow("mimeType")
-                val sizeIdx = c.getColumnIndexOrThrow("sizeBytes")
-                val blobIdx = c.getColumnIndexOrThrow("blobName")
-                val saltIdx = c.getColumnIndexOrThrow("fileSaltBase64")
-                val createdIdx = c.getColumnIndexOrThrow("createdAt")
-                val modIdx = c.getColumnIndexOrThrow("modifiedAt")
-                val syncIdx = c.getColumnIndexOrThrow("syncStatus")
+            db = SQLiteDatabase.openDatabase(dbFile.path, null, SQLiteDatabase.OPEN_READONLY)
+            val cursor = db.rawQuery("SELECT id, name, parent_id, is_directory, mime_type, size_bytes, blob_name, file_salt, created_at, modified_at, sync_status FROM entries", null)
+            val entries = mutableListOf<VaultEntryEntity>()
 
+            cursor.use { c ->
                 while (c.moveToNext()) {
-                    val entity = VaultEntryEntity(
-                        id = c.getString(idIdx),
-                        name = c.getString(nameIdx),
-                        parentId = if (c.isNull(parentIdIdx)) null else c.getString(parentIdIdx),
-                        isDirectory = c.getInt(isDirIdx) == 1,
-                        mimeType = if (c.isNull(mimeIdx)) null else c.getString(mimeIdx),
-                        sizeBytes = c.getLong(sizeIdx),
-                        blobName = if (c.isNull(blobIdx)) null else c.getString(blobIdx),
-                        fileSaltBase64 = if (c.isNull(saltIdx)) null else c.getString(saltIdx),
-                        createdAt = c.getLong(createdIdx),
-                        modifiedAt = c.getLong(modIdx),
-                        syncStatus = c.getString(syncIdx)
+                    val id = c.getString(0)
+                    val name = c.getString(1)
+                    val parentId = if (c.isNull(2)) null else c.getString(2)
+                    val isDirectory = c.getInt(3) == 1
+                    val mimeType = if (c.isNull(4)) null else c.getString(4)
+                    val sizeBytes = c.getLong(5)
+                    val blobName = if (c.isNull(6)) null else c.getString(6)
+                    val fileSaltBase64 = if (c.isNull(7)) null else c.getString(7)
+                    val createdAt = c.getLong(8)
+                    val modifiedAt = c.getLong(9)
+                    val syncStatus = c.getString(10) ?: SyncStatus.PENDING.name
+
+                    entries.add(
+                        VaultEntryEntity(
+                            id = id,
+                            name = name,
+                            parentId = parentId,
+                            isDirectory = isDirectory,
+                            mimeType = mimeType,
+                            sizeBytes = sizeBytes,
+                            blobName = blobName,
+                            fileSaltBase64 = fileSaltBase64,
+                            createdAt = createdAt,
+                            modifiedAt = modifiedAt,
+                            syncStatus = syncStatus
+                        )
                     )
-                    migratedEntities.add(entity)
                 }
             }
-            dao.deleteAll()
-            dao.insertEntries(migratedEntities)
-            Log.i(TAG, "Migrated ${migratedEntities.size} entries from legacy database")
+
+            if (entries.isNotEmpty()) {
+                dao.insertEntries(entries)
+            }
         } finally {
             db?.close()
         }
     }
 
     private fun deleteLegacyDatabase() {
-        try {
-            context.deleteDatabase("vaulta_local.db")
-        } catch (_: Exception) {}
+        val legacyDb = context.getDatabasePath("vaulta_local.db")
+        if (!legacyDb.exists()) return
 
         try {
-            val legacyDb = context.getDatabasePath("vaulta_local.db")
-            val dir = legacyDb.parentFile
-            if (dir != null && dir.exists()) {
-                dir.listFiles()?.forEach { file ->
-                    if (file.name.startsWith("vaulta_local.db")) {
+            val dbDir = legacyDb.parentFile
+            if (dbDir != null && dbDir.exists()) {
+                val files = dbDir.listFiles { _, name -> name.startsWith("vaulta_local.db") }
+                files?.forEach { file ->
+                    if (file.exists()) {
                         try {
-                            if (file.isFile && file.length() > 0) {
-                                val toWipe = file.length().coerceAtMost(64 * 1024).toInt()
+                            val len = file.length()
+                            if (len > 0) {
                                 RandomAccessFile(file, "rws").use { raf ->
+                                    val toWipe = len.toInt().coerceAtMost(1024 * 1024)
                                     raf.seek(0)
                                     raf.write(ByteArray(toWipe))
                                 }
@@ -237,9 +234,12 @@ class EncryptedIndexImpl @Inject constructor(
         val credentials = mutableListOf<VaultCredential>()
 
         val firstInt = dis.readInt()
+        val isVersion4 = (firstInt == VERSION_4_MAGIC)
+        val isVersion3 = (firstInt == VERSION_3_MAGIC)
         val isVersion2 = (firstInt == VERSION_2_MAGIC)
+        val hasMagicHeader = isVersion4 || isVersion3 || isVersion2
 
-        val fileCount = if (isVersion2) dis.readInt() else firstInt
+        val fileCount = if (hasMagicHeader) dis.readInt() else firstInt
 
         for (i in 0 until fileCount) {
             val id = dis.readUTF()
@@ -261,6 +261,13 @@ class EncryptedIndexImpl @Inject constructor(
             val createdAt = dis.readLong()
             val modifiedAt = dis.readLong()
             val syncStatusStr = dis.readUTF()
+            val syncPolicyStr = if (isVersion3) dis.readUTF() else SyncPolicy.AUTO_SYNC.name
+
+            val isBlobLocallyPresent = if (!blobName.isNullOrBlank() && !isDirectory) {
+                File(File(context.filesDir, "vaulta"), "blobs/$blobName").exists()
+            } else {
+                true
+            }
 
             val entry = VaultEntry(
                 id = id,
@@ -275,14 +282,20 @@ class EncryptedIndexImpl @Inject constructor(
                 modifiedAt = modifiedAt,
                 syncStatus = try {
                     SyncStatus.valueOf(syncStatusStr)
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     SyncStatus.PENDING
-                }
+                },
+                syncPolicy = try {
+                    SyncPolicy.valueOf(syncPolicyStr)
+                } catch (_: Exception) {
+                    SyncPolicy.AUTO_SYNC
+                },
+                isAvailableLocally = isBlobLocallyPresent
             )
             entries.add(entry)
         }
 
-        if (isVersion2 && dis.available() > 0) {
+        if (hasMagicHeader && dis.available() > 0) {
             val credentialCount = dis.readInt()
             for (i in 0 until credentialCount) {
                 val id = dis.readUTF()
@@ -300,6 +313,41 @@ class EncryptedIndexImpl @Inject constructor(
                 val createdAt = dis.readLong()
                 val modifiedAt = dis.readLong()
                 val isFavorite = dis.readBoolean()
+
+                val passwordHistoryJson = if (isVersion4) dis.readUTF() else "[]"
+                val customFieldsJson = if (isVersion4) dis.readUTF() else "{}"
+                val hasExpiresAt = if (isVersion4) dis.readBoolean() else false
+                val expiresAt = if (hasExpiresAt) dis.readLong() else null
+                val tagsCsv = if (isVersion4) dis.readUTF() else ""
+                val hasColorTag = if (isVersion4) dis.readBoolean() else false
+                val colorTag = if (hasColorTag) dis.readInt() else null
+                val templateTypeStr = if (isVersion4) dis.readUTF() else CredentialTemplate.LOGIN.name
+
+                val historyList = mutableListOf<PasswordHistoryEntry>()
+                try {
+                    val arr = org.json.JSONArray(passwordHistoryJson)
+                    for (h in 0 until arr.length()) {
+                        val obj = arr.getJSONObject(h)
+                        historyList.add(
+                            PasswordHistoryEntry(
+                                timestamp = obj.optLong("timestamp", System.currentTimeMillis()),
+                                password = obj.optString("password", "")
+                            )
+                        )
+                    }
+                } catch (_: Exception) {}
+
+                val customMap = mutableMapOf<String, String>()
+                try {
+                    val obj = org.json.JSONObject(customFieldsJson)
+                    val keys = obj.keys()
+                    while (keys.hasNext()) {
+                        val key = keys.next()
+                        customMap[key] = obj.optString(key, "")
+                    }
+                } catch (_: Exception) {}
+
+                val tagList = tagsCsv.split(",").map { it.trim() }.filter { it.isNotEmpty() }
 
                 val category = try {
                     CredentialCategory.valueOf(categoryStr)
@@ -323,7 +371,13 @@ class EncryptedIndexImpl @Inject constructor(
                         notes = notes,
                         createdAt = createdAt,
                         modifiedAt = modifiedAt,
-                        isFavorite = isFavorite
+                        isFavorite = isFavorite,
+                        passwordHistory = historyList,
+                        customFields = customMap,
+                        expiresAt = expiresAt,
+                        tags = tagList,
+                        colorTag = colorTag,
+                        templateType = try { CredentialTemplate.valueOf(templateTypeStr) } catch (_: Exception) { CredentialTemplate.LOGIN }
                     )
                 )
             }
@@ -339,7 +393,7 @@ class EncryptedIndexImpl @Inject constructor(
         val baos = ByteArrayOutputStream()
         val dos = DataOutputStream(baos)
 
-        dos.writeInt(VERSION_2_MAGIC)
+        dos.writeInt(VERSION_4_MAGIC)
         dos.writeInt(allEntities.size)
 
         for (entity in allEntities) {
@@ -365,6 +419,7 @@ class EncryptedIndexImpl @Inject constructor(
             dos.writeLong(entry.createdAt)
             dos.writeLong(entry.modifiedAt)
             dos.writeUTF(entry.syncStatus.name)
+            dos.writeUTF(entry.syncPolicy.name)
         }
 
         dos.writeInt(allCredentials.size)
@@ -385,12 +440,20 @@ class EncryptedIndexImpl @Inject constructor(
             dos.writeLong(cred.createdAt)
             dos.writeLong(cred.modifiedAt)
             dos.writeBoolean(cred.isFavorite)
+
+            dos.writeUTF(credEntity.passwordHistoryJson)
+            dos.writeUTF(credEntity.customFieldsJson)
+            dos.writeBoolean(cred.expiresAt != null)
+            if (cred.expiresAt != null) dos.writeLong(cred.expiresAt)
+            dos.writeUTF(credEntity.tagsCsv)
+            dos.writeBoolean(cred.colorTag != null)
+            if (cred.colorTag != null) dos.writeInt(cred.colorTag)
+            dos.writeUTF(cred.templateType.name)
         }
 
         dos.flush()
-
-        val plainData = baos.toByteArray()
-        return keyWrapping.wrap(plainData, masterKey)
+        val plaintextBytes = baos.toByteArray()
+        return keyWrapping.wrap(plaintextBytes, masterKey)
     }
 
     override suspend fun addEntry(entry: VaultEntry) {
@@ -459,6 +522,8 @@ class EncryptedIndexImpl @Inject constructor(
 
     companion object {
         private const val TAG = "EncryptedIndex"
+        private const val VERSION_4_MAGIC = 0x56415504 // "VAU4"
+        private const val VERSION_3_MAGIC = 0x56415503 // "VAU3"
         private const val VERSION_2_MAGIC = 0x56415532 // "VAU2"
     }
 }

@@ -16,7 +16,9 @@ data class VaultEntryEntity(
     val fileSaltBase64: String?,
     val createdAt: Long,
     val modifiedAt: Long,
-    val syncStatus: String
+    val syncStatus: String,
+    val syncPolicy: String = "AUTO_SYNC",
+    val isAvailableLocally: Boolean = true
 )
 
 fun VaultEntry.toEntity(): VaultEntryEntity {
@@ -31,7 +33,9 @@ fun VaultEntry.toEntity(): VaultEntryEntity {
         fileSaltBase64 = fileSalt?.let { Base64.getEncoder().encodeToString(it) },
         createdAt = createdAt,
         modifiedAt = modifiedAt,
-        syncStatus = syncStatus.name
+        syncStatus = syncStatus.name,
+        syncPolicy = syncPolicy.name,
+        isAvailableLocally = isAvailableLocally
     )
 }
 
@@ -55,8 +59,14 @@ fun VaultEntryEntity.toDomain(): VaultEntry {
         modifiedAt = modifiedAt,
         syncStatus = try {
             SyncStatus.valueOf(syncStatus)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             SyncStatus.PENDING
-        }
+        },
+        syncPolicy = try {
+            SyncPolicy.valueOf(syncPolicy)
+        } catch (_: Exception) {
+            SyncPolicy.AUTO_SYNC
+        },
+        isAvailableLocally = isAvailableLocally
     )
 }

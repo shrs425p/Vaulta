@@ -4,8 +4,10 @@ import android.util.Log
 import com.vaulta.storage.blob.BlobStore
 import com.vaulta.storage.index.VaultEntryDao
 import com.vaulta.storage.index.toEntity
+import com.vaulta.storage.index.toDomain
 import com.vaulta.storage.index.EncryptedIndex
 import com.vaulta.storage.index.SyncStatus
+import com.vaulta.storage.index.SyncPolicy
 import com.vaulta.sync.drive.DriveSyncClient
 import com.vaulta.vault.session.VaultSession
 import com.vaulta.vault.sync.SyncProvider
@@ -48,6 +50,11 @@ class SyncEngine @Inject constructor(
                 // Step 0: Download remote index from Google Drive and merge remote changes
                 Log.d(TAG, "Step 0: Checking and downloading remote index from Google Drive...")
                 val remoteIndexBytes = driveClient.downloadIndex()
+                val clientError = driveClient.getLastError()
+                if (clientError != null) {
+                    throw IllegalStateException(clientError)
+                }
+
                 val isFirstSync = (remoteIndexBytes == null || remoteIndexBytes.isEmpty())
                 val remoteEntries = if (!isFirstSync) {
                     try {
@@ -71,7 +78,7 @@ class SyncEngine @Inject constructor(
                     .map { it.id }
                     .toSet()
 
-                // Step 1: Process Remote Delta -> Merge into local Room DB & download missing blobs
+                // Step 1: Process Remote Delta -> Merge into local Room DB (On-demand blobs)
                 for (remoteEntry in remoteEntries) {
                     val localEntity = localMap[remoteEntry.id]
 
@@ -81,17 +88,18 @@ class SyncEngine @Inject constructor(
                             // User on this device explicitly deleted it; sync deletion to remote
                             remoteEntry.blobName?.let { driveClient.deleteBlob(it) }
                         } else {
-                            // New file added from another device -> Pull blob and insert locally
-                            remoteEntry.blobName?.let { bName ->
-                                val destBlob = blobStore.getBlobFile(bName)
-                                if (!destBlob.exists()) {
-                                    val downloaded = driveClient.downloadBlob(bName, destBlob)
-                                    if (!downloaded) {
-                                        Log.w(TAG, "Failed downloading remote blob $bName")
-                                    }
-                                }
+                            // New file added from cloud -> Register entry with on-demand availability
+                            val isBlobPresent = if (!remoteEntry.blobName.isNullOrBlank() && !remoteEntry.isDirectory) {
+                                blobStore.getBlobFile(remoteEntry.blobName!!).exists()
+                            } else {
+                                true
                             }
-                            vaultEntryDao.insertEntry(remoteEntry.copy(syncStatus = SyncStatus.SYNCED).toEntity())
+                            vaultEntryDao.insertEntry(
+                                remoteEntry.copy(
+                                    syncStatus = SyncStatus.SYNCED,
+                                    isAvailableLocally = isBlobPresent
+                                ).toEntity()
+                            )
                         }
                     } else {
                         // Entry exists on both local and remote
@@ -125,37 +133,47 @@ class SyncEngine @Inject constructor(
                                 vaultEntryDao.insertEntry(conflictCopy)
                                 conflictCopy.blobName?.let { bName ->
                                     val bFile = blobStore.getBlobFile(bName)
-                                    if (bFile.exists()) driveClient.uploadBlob(bName, bFile)
-                                }
-
-                                // Download remote update and adopt it for the canonical entry
-                                remoteEntry.blobName?.let { rBlob ->
-                                    val destBlob = blobStore.getBlobFile(rBlob)
-                                    if (!destBlob.exists()) {
-                                        driveClient.downloadBlob(rBlob, destBlob)
+                                    if (bFile.exists() && localEntity.syncPolicy != SyncPolicy.LOCAL_ONLY.name) {
+                                        val uploaded = driveClient.uploadBlob(bName, bFile)
+                                        if (!uploaded) {
+                                            val err = driveClient.getLastError() ?: "Failed uploading $bName"
+                                            throw IllegalStateException(err)
+                                        }
                                     }
                                 }
-                                vaultEntryDao.insertEntry(remoteEntry.copy(syncStatus = SyncStatus.SYNCED).toEntity())
+
+                                val isBlobPresent = remoteEntry.blobName?.let { blobStore.getBlobFile(it).exists() } ?: true
+                                vaultEntryDao.insertEntry(
+                                    remoteEntry.copy(
+                                        syncStatus = SyncStatus.SYNCED,
+                                        isAvailableLocally = isBlobPresent
+                                    ).toEntity()
+                                )
                             }
 
                             localEntity.syncStatus == SyncStatus.SYNCED.name &&
                                     remoteEntry.modifiedAt > localEntity.modifiedAt -> {
-                                // Remote is newer; update local copy
-                                remoteEntry.blobName?.let { rBlob ->
-                                    val destBlob = blobStore.getBlobFile(rBlob)
-                                    if (!destBlob.exists()) {
-                                        driveClient.downloadBlob(rBlob, destBlob)
-                                    }
-                                }
-                                vaultEntryDao.updateEntry(remoteEntry.copy(syncStatus = SyncStatus.SYNCED).toEntity())
+                                // Remote metadata is newer; update local entry
+                                val isBlobPresent = remoteEntry.blobName?.let { blobStore.getBlobFile(it).exists() } ?: true
+                                vaultEntryDao.updateEntry(
+                                    remoteEntry.copy(
+                                        syncStatus = SyncStatus.SYNCED,
+                                        isAvailableLocally = isBlobPresent
+                                    ).toEntity()
+                                )
                             }
                         }
                     }
                 }
 
-                // Step 2: Process Local Delta -> Remote
+                // Step 2: Process Local Delta -> Remote (Respect LOCAL_ONLY policy)
                 val refreshedLocalEntities = vaultEntryDao.getAllEntries()
                 for (localEntity in refreshedLocalEntities) {
+                    if (localEntity.syncPolicy == SyncPolicy.LOCAL_ONLY.name) {
+                        // Skip uploading files marked as LOCAL_ONLY
+                        continue
+                    }
+
                     if (localEntity.syncStatus == SyncStatus.DELETED.name) {
                         localEntity.blobName?.let { bName ->
                             driveClient.deleteBlob(bName)
@@ -173,7 +191,11 @@ class SyncEngine @Inject constructor(
                             localEntity.blobName?.let { bName ->
                                 val bFile = blobStore.getBlobFile(bName)
                                 if (bFile.exists()) {
-                                    driveClient.uploadBlob(bName, bFile)
+                                    val uploaded = driveClient.uploadBlob(bName, bFile)
+                                    if (!uploaded) {
+                                        val err = driveClient.getLastError() ?: "Failed uploading $bName"
+                                        throw IllegalStateException(err)
+                                    }
                                 }
                             }
                             vaultEntryDao.updateEntry(localEntity.copy(syncStatus = SyncStatus.SYNCED.name))
@@ -183,7 +205,11 @@ class SyncEngine @Inject constructor(
                         localEntity.blobName?.let { bName ->
                             val bFile = blobStore.getBlobFile(bName)
                             if (bFile.exists()) {
-                                driveClient.uploadBlob(bName, bFile)
+                                val uploaded = driveClient.uploadBlob(bName, bFile)
+                                if (!uploaded) {
+                                    val err = driveClient.getLastError() ?: "Failed uploading $bName"
+                                    throw IllegalStateException(err)
+                                }
                             }
                         }
                         vaultEntryDao.updateEntry(localEntity.copy(syncStatus = SyncStatus.SYNCED.name))
@@ -192,7 +218,11 @@ class SyncEngine @Inject constructor(
 
                 // Step 3: Export consolidated encrypted index, upload to Google Drive, and persist locally
                 val mergedIndexData = encryptedIndex.exportToEncryptedData(masterKey)
-                driveClient.uploadIndex(mergedIndexData)
+                val indexUploaded = driveClient.uploadIndex(mergedIndexData)
+                if (!indexUploaded) {
+                    val err = driveClient.getLastError() ?: "Failed uploading encrypted index to Google Drive"
+                    throw IllegalStateException(err)
+                }
                 encryptedIndex.saveIndex(masterKey)
             }
 
@@ -201,6 +231,61 @@ class SyncEngine @Inject constructor(
             Log.e(TAG, "Bi-directional sync failed: ${e.message}", e)
             Result.failure(e)
         }
+    }
+
+    override suspend fun downloadSpecificBlob(id: String): Result<Unit> = withContext(Dispatchers.IO) {
+        if (!driveClient.isSignedIn()) {
+            return@withContext Result.failure(IllegalStateException("Google Drive account is not signed in."))
+        }
+        val entity = vaultEntryDao.getEntryById(id) ?: return@withContext Result.failure(IllegalArgumentException("Entry not found"))
+        val domain = entity.toDomain()
+        val bName = domain.blobName ?: return@withContext Result.failure(IllegalStateException("File has no associated blob"))
+
+        val destBlob = blobStore.getBlobFile(bName)
+        if (!destBlob.exists()) {
+            val downloaded = driveClient.downloadBlob(bName, destBlob)
+            if (!downloaded) {
+                val err = driveClient.getLastError() ?: "Failed downloading blob $bName from Google Drive"
+                return@withContext Result.failure(IllegalStateException(err))
+            }
+        }
+        vaultEntryDao.updateEntry(entity.copy(isAvailableLocally = true))
+        Result.success(Unit)
+    }
+
+    override suspend fun removeRemoteBlob(id: String): Result<Unit> = withContext(Dispatchers.IO) {
+        val entity = vaultEntryDao.getEntryById(id) ?: return@withContext Result.failure(IllegalArgumentException("Entry not found"))
+        val domain = entity.toDomain()
+        val bName = domain.blobName
+
+        if (!bName.isNullOrBlank() && driveClient.isSignedIn()) {
+            driveClient.deleteBlob(bName)
+        }
+        vaultEntryDao.updateEntry(entity.copy(syncPolicy = SyncPolicy.LOCAL_ONLY.name))
+        vaultSession.withMasterKey { masterKey ->
+            encryptedIndex.saveIndex(masterKey)
+        }
+        Result.success(Unit)
+    }
+
+    override suspend fun downloadAllRemoteBlobs(): Result<Unit> = withContext(Dispatchers.IO) {
+        if (!driveClient.isSignedIn()) {
+            return@withContext Result.failure(IllegalStateException("Google Drive account is not signed in."))
+        }
+        val cloudOnlyEntities = vaultEntryDao.getAllEntries().filter { !it.isDirectory && (!it.isAvailableLocally || !blobStore.getBlobFile(it.blobName ?: "").exists()) }
+        for (entity in cloudOnlyEntities) {
+            val bName = entity.blobName ?: continue
+            val destBlob = blobStore.getBlobFile(bName)
+            if (!destBlob.exists()) {
+                val downloaded = driveClient.downloadBlob(bName, destBlob)
+                if (downloaded) {
+                    vaultEntryDao.updateEntry(entity.copy(isAvailableLocally = true))
+                }
+            } else {
+                vaultEntryDao.updateEntry(entity.copy(isAvailableLocally = true))
+            }
+        }
+        Result.success(Unit)
     }
 
     override fun getSignInIntent(context: android.content.Context): android.content.Intent? {
@@ -217,6 +302,14 @@ class SyncEngine @Inject constructor(
 
     override fun signOut(): Boolean {
         return driveClient.signOut()
+    }
+
+    override fun setStealthMode(enabled: Boolean) {
+        driveClient.setStealthMode(enabled)
+    }
+
+    override suspend fun switchStorageSpace(toStealthMode: Boolean): Boolean {
+        return driveClient.switchStorageSpace(toStealthMode)
     }
 
     companion object {

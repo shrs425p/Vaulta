@@ -26,6 +26,8 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -83,6 +85,8 @@ fun SettingsScreen(
     val currentThemeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val currentThemeStyle by viewModel.themeStyle.collectAsStateWithLifecycle()
     val stats by viewModel.vaultStats.collectAsStateWithLifecycle()
+    val isSyncAvailable by viewModel.isSyncAvailable.collectAsStateWithLifecycle()
+    val isStealthSyncEnabled by viewModel.isStealthSyncEnabled.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     val isOffline = remember(context) { context.packageName.endsWith(".offline") }
@@ -294,7 +298,7 @@ fun SettingsScreen(
                             },
                             supportingContent = {
                                 Text(
-                                    if (viewModel.isSyncAvailable)
+                                    if (isSyncAvailable)
                                         "Uploads encrypted blobs & encrypted index. Plaintext is never transmitted."
                                     else
                                         "Google Drive account is not signed in. Tap to authenticate and sync.",
@@ -308,7 +312,7 @@ fun SettingsScreen(
                                     Column(horizontalAlignment = Alignment.End) {
                                         OutlinedButton(
                                             onClick = {
-                                                if (viewModel.isSyncAvailable) {
+                                                if (isSyncAvailable) {
                                                     viewModel.syncNow()
                                                 } else {
                                                     val intent = viewModel.getSignInIntent(context)
@@ -319,10 +323,10 @@ fun SettingsScreen(
                                             },
                                             shape = RoundedCornerShape(12.dp)
                                         ) {
-                                            Text(if (viewModel.isSyncAvailable) "Sync Now" else "Sign In")
+                                            Text(if (isSyncAvailable) "Sync Now" else "Sign In")
                                         }
 
-                                        if (viewModel.isSyncAvailable) {
+                                        if (isSyncAvailable) {
                                             androidx.compose.material3.TextButton(
                                                 onClick = { viewModel.signOut() }
                                             ) {
@@ -331,6 +335,52 @@ fun SettingsScreen(
                                         }
                                     }
                                 }
+                            }
+                        )
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+
+                        // Stealth Cloud Backup Toggle
+                        ListItem(
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            leadingContent = {
+                                Box(
+                                    modifier = Modifier
+                                        .size(42.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(
+                                            if (isStealthSyncEnabled) MaterialTheme.colorScheme.primaryContainer
+                                            else MaterialTheme.colorScheme.surfaceVariant
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.VisibilityOff,
+                                        contentDescription = null,
+                                        tint = if (isStealthSyncEnabled) MaterialTheme.colorScheme.onPrimaryContainer
+                                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                            },
+                            headlineContent = {
+                                Text("Stealth Cloud Backup", fontWeight = FontWeight.SemiBold)
+                            },
+                            supportingContent = {
+                                Text(
+                                    text = if (isStealthSyncEnabled)
+                                        "ON (Stealth) • Backups stored in Google Drive's hidden appDataFolder (invisible in Drive search)."
+                                    else
+                                        "OFF (Visible) • Backups stored in My Drive > Vaulta Backups folder.",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            },
+                            trailingContent = {
+                                Switch(
+                                    checked = isStealthSyncEnabled,
+                                    onCheckedChange = { viewModel.setStealthSyncEnabled(it) },
+                                    enabled = isSyncAvailable && uiState !is SettingsUiState.Processing
+                                )
                             }
                         )
                     }

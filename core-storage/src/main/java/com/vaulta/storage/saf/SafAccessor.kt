@@ -12,4 +12,6 @@ interface SafAccessor {
     fun getFileName(uri: Uri): String?
     fun getMimeType(uri: Uri): String?
     fun getFileSize(uri: Uri): Long
+    fun deleteOriginal(uri: Uri): Boolean
+    fun createNoMediaFile(folderUri: Uri): Boolean
 }
