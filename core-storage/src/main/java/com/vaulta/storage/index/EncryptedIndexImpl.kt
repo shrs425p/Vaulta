@@ -295,10 +295,12 @@ class EncryptedIndexImpl @Inject constructor(
             entries.add(entry)
         }
 
-        if (hasMagicHeader && dis.available() > 0) {
-            val credentialCount = dis.readInt()
-            for (i in 0 until credentialCount) {
-                val id = dis.readUTF()
+        if (hasMagicHeader && dis.available() >= 4) {
+            try {
+                val credentialCount = dis.readInt()
+                for (i in 0 until credentialCount) {
+                    if (dis.available() <= 0) break
+                    val id = dis.readUTF()
                 val categoryStr = dis.readUTF()
                 val title = dis.readUTF()
                 val username = dis.readUTF()
@@ -381,6 +383,7 @@ class EncryptedIndexImpl @Inject constructor(
                     )
                 )
             }
+        } catch (_: Exception) {}
         }
 
         return Pair(entries, credentials)

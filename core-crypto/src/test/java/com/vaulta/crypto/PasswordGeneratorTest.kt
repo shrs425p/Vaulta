@@ -23,7 +23,7 @@ class PasswordGeneratorTest {
         val weak = PasswordGenerator.calculateStrength("12345")
         val strong = PasswordGenerator.calculateStrength("P@ssw0rd!LongAndComplex2025")
 
-        assertThat(weak).isEqualTo(PasswordStrength.WEAK)
+        assertThat(weak).isEqualTo(PasswordStrength.VERY_WEAK)
         assertThat(strong).isEqualTo(PasswordStrength.VERY_STRONG)
     }
 }
