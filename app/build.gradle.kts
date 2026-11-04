@@ -41,10 +41,12 @@ android {
         localProperties.load(localPropertiesFile.inputStream())
     }
 
-    signingConfigs {
-        create("releaseKey") {
-            val storeFilePath = localProperties.getProperty("RELEASE_STORE_FILE")
-            if (storeFilePath != null && file(storeFilePath).exists()) {
+    val storeFilePath = localProperties.getProperty("RELEASE_STORE_FILE")
+    val hasValidReleaseKey = storeFilePath != null && file(storeFilePath).exists()
+
+    if (hasValidReleaseKey) {
+        signingConfigs {
+            create("releaseKey") {
                 storeFile = file(storeFilePath)
                 storePassword = localProperties.getProperty("RELEASE_KEYSTORE_PASSWORD")
                 keyAlias = localProperties.getProperty("RELEASE_KEY_ALIAS")
@@ -55,12 +57,16 @@ android {
 
     buildTypes {
         debug {
-            signingConfig = signingConfigs.findByName("releaseKey") ?: signingConfigs.getByName("debug")
+            if (hasValidReleaseKey) {
+                signingConfig = signingConfigs.getByName("releaseKey")
+            }
         }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.findByName("releaseKey") ?: signingConfigs.getByName("debug")
+            if (hasValidReleaseKey) {
+                signingConfig = signingConfigs.getByName("releaseKey")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
