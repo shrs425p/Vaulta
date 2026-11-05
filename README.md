@@ -1,6 +1,6 @@
 # Vaulta
 
-Zero-knowledge Android vault for encrypted files, passwords, and 2FA with in-memory RAM streaming and air-gapped security.
+Open-source, local-first Android vault for encrypted files, passwords, and 2FA with in-memory RAM streaming and air-gapped security.
 
 [![Release](https://img.shields.io/github/v/release/shrs425p/Vaulta?label=Release&color=24634d)](https://github.com/shrs425p/Vaulta/releases/latest)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
@@ -9,6 +9,42 @@ Zero-knowledge Android vault for encrypted files, passwords, and 2FA with in-mem
 
 Official Website: [vaultaaa.web.app](https://vaultaaa.web.app) | Downloads Hub: [vaultaaa.web.app/download](https://vaultaaa.web.app/download)
 
+<p align="center">
+  <img src="docs/screenshots/screen_home.jpg" width="22%" alt="Vaulta Home Screen" />
+  <img src="docs/screenshots/screen_totp.jpg" width="22%" alt="2FA Authenticator" />
+  <img src="docs/screenshots/screen_passwords.jpg" width="22%" alt="Password Manager" />
+  <img src="docs/screenshots/screen_settings.jpg" width="22%" alt="Settings and Export" />
+</p>
+
+---
+
+## Why Vaulta?
+
+Vaulta solves a specific problem that existing security tools leave fragmented across separate applications:
+
+- **Bitwarden & Proton Pass:**
+  Strong general-purpose password managers, but designed primarily around cloud infrastructure with active internet permissions, network syncing dependencies, and remote accounts. Vaulta's offline edition omits the network stack entirely at the Android OS manifest layer.
+
+- **KeePassDX:**
+  A capable offline credential manager, but restricted strictly to .kdbx password databases. It requires external file-provider sync plugins or manual file-picker workflows and does not offer an integrated RFC 6238 2FA authenticator or media streaming.
+
+- **Aegis Authenticator:**
+  An excellent offline 2FA app, but focused exclusively on one-time code tokens. It does not store encrypted documents, photos, notes, or credentials.
+
+- **Vaulta's Architectural Differences:**
+  - **Air-Gapped Offline Build:** The offline edition declares no `android.permission.INTERNET`. The Android OS prevents the process from creating network sockets.
+  - **In-Memory RAM Streaming:** Encrypted photos, audio, videos, and PDFs stream through authenticated 64 KB cipher chunks directly into RAM buffers. Decrypted plaintext is never written to flash storage or temporary cache files.
+  - **Unified Security Boundary:** 2FA TOTP/HOTP codes, password credentials, sensitive notes, and encrypted files live within a single Argon2id + AES-256-GCM hardware-backed vault.
+  - **Zero Vendor Lock-In:** A complete one-click batch export option in Settings allows users to decrypt and restore all original media and credentials at any time.
+
+---
+
+## Security Audit Status
+
+Vaulta is in active open-source development and has not yet undergone an independent third-party security audit. The complete source code, threat model, and cryptographic implementation are open for peer review and reproducible verification.
+
+If you identify a security defect, please disclose it responsibly via [GitHub Security Advisories](https://github.com/shrs425p/Vaulta/security/advisories).
+
 ---
 
 ## Downloads
@@ -16,12 +52,15 @@ Official Website: [vaultaaa.web.app](https://vaultaaa.web.app) | Downloads Hub: 
 Vaulta is released in two distinct editions to match your personal operational security requirements. Both editions share the exact same cryptographic core:
 
 - **Offline Edition (Air-Gapped):**
-  - Completely omits `android.permission.INTERNET` at the OS kernel level.
-  - Zero network code compiled; physical egress is impossible.
+  - Package: `com.vaulta.shrs.offline`
+  - Completely omits `android.permission.INTERNET`.
+  - Zero network libraries compiled into the binary.
   - [Download Offline APK](https://github.com/shrs425p/Vaulta/releases/latest/download/app-offline-release.apk) (5.08 MB)
 
 - **Online Edition (Google Drive Sync):**
+  - Package: `com.vaulta.shrs`
   - Direct client-to-Google-Drive encrypted synchronization with zero intermediate servers.
+  - Pre-encrypts all data locally before transmission (Google only receives ciphertext blobs).
   - Supports Stealth Mode (`appDataFolder`) and an itemized Cloud Storage Inspector.
   - [Download Online APK](https://github.com/shrs425p/Vaulta/releases/latest/download/app-cloud-release.apk) (6.11 MB)
 
@@ -46,11 +85,11 @@ adb install -r app-offline-release.apk
 - **Hardware Root of Trust:**
   Biometric unlock keys backed by Android Keystore (TEE / StrongBox). Screen surveillance protection enforced via `FLAG_SECURE`.
 
-- **Zero Vendor Lock-In Guarantee:**
+- **Batch Export:**
   Full batch-export capability to decrypt and restore all original media, documents, and credentials back to unencrypted files at any time from Settings.
 
 - **Disaster Recovery via portable `vault.key`:**
-  Portable cryptographic container file allows full vault migration across phones without third-party servers.
+  Encrypted salt and parameter container file allows full vault migration across phones without third-party servers.
 
 ---
 
@@ -74,7 +113,7 @@ adb install -r app-offline-release.apk
 ```
 
 ### Specifications
-- **Key Derivation Function:** Argon2id (m=65536, t=3, p=4) with PBKDF2 fallback.
+- **Key Derivation Function:** Argon2id (m=65536 KB, t=3, p=4) with PBKDF2 fallback on unsupported platforms.
 - **Symmetric Cipher:** AES-256 in Galois/Counter Mode (GCM) with 128-bit authentication tag.
 - **Chunk Size:** 64 KB per authenticated chunk with monotonic index counters to guard against reordering attacks.
 - **Biometric Enclave:** Android Keystore with Hardware-backed StrongBox / TEE validation.
@@ -128,12 +167,6 @@ Compiled APKs will be located at:
 ## Contributing
 
 Contributions, bug reports, and code audits are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on code standards, local testing, and submission guidelines.
-
----
-
-## Security Disclosures
-
-If you discover a cryptographic vulnerability or security defect, please disclose it responsibly via [GitHub Security Advisories](https://github.com/shrs425p/Vaulta/security/advisories) rather than opening a public issue.
 
 ---
 

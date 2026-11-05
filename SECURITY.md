@@ -1,17 +1,15 @@
 # Security Policy
 
-Vaulta is an open-source, zero-knowledge vault application designed to safeguard sensitive files, credentials, and two-factor authentication tokens. We take security vulnerabilities seriously and welcome responsible disclosures from researchers, developers, and users.
+Vaulta is an open-source, local-first vault application designed to safeguard sensitive files, credentials, and two-factor authentication tokens. We take security vulnerabilities seriously and welcome responsible disclosures from researchers, developers, and users.
 
 ---
 
 ## Supported Versions
 
-Only the latest release receive security patches and cryptographic updates.
+Only the latest release receives security patches and cryptographic updates:
 
-| Version | Supported | Notes |
-| :--- | :---: | :--- |
-| **1.0.x** | Yes | Current active stable release |
-| **< 1.0.0** | No | Deprecated development builds |
+- **v1.0.x:** Actively supported stable release
+- **< v1.0.0:** Deprecated development releases
 
 ---
 
@@ -33,12 +31,12 @@ Only the latest release receive security patches and cryptographic updates.
 
 ## Reporting a Vulnerability
 
-**Please DO NOT open a public GitHub Issue for security vulnerabilities.**
+Please do not open a public GitHub Issue for security vulnerabilities.
 
 To report a vulnerability responsibly:
 
 1. **Submit via GitHub Private Security Advisories:**  
-   Go to [**Report a Vulnerability**](https://github.com/shrs425p/Vaulta/security/advisories/new).
+   Go to [Report a Vulnerability](https://github.com/shrs425p/Vaulta/security/advisories/new).
 2. **Include Technical Details:**
    - Detailed description of the defect or cryptographic weakness.
    - Proof-of-concept (PoC) code or steps to reproduce.
@@ -48,6 +46,6 @@ To report a vulnerability responsibly:
 
 ## Our Commitment
 
-- **Acknowledgment:** We will acknowledge receipt of your report within **48 hours**.
+- **Acknowledgment:** We will acknowledge receipt of your report within 48 hours.
 - **Assessment:** We will validate the issue and coordinate with you on a severity assessment.
 - **Fix & Disclosure:** We will work on a patch and coordinate a public release timeline with appropriate attribution and credit.
