@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/banner.png" alt="Vaulta Social Preview" width="100%" />
+</p>
+
 # Vaulta
 
 Open-source, local-first Android vault for encrypted files, passwords, and 2FA with in-memory RAM streaming and air-gapped security.
