@@ -5,6 +5,7 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -16,10 +17,10 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -28,11 +29,25 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Run Unit & Cryptographic Tests
-        run: ./gradlew test
+      - name: Run unit tests, Android lint, and all release/debug builds
+        run: >-
+          ./gradlew --no-daemon
+          test
+          lintOfflineRelease lintCloudRelease
+          assembleOfflineDebug assembleCloudDebug
+          assembleOfflineRelease assembleCloudRelease
 
-      - name: Assemble Offline Debug APK
-        run: ./gradlew assembleOfflineDebug
-
-      - name: Assemble Cloud Debug APK
-        run: ./gradlew assembleCloudDebug
+      - name: Verify Offline release has no network permissions
+        shell: bash
+        run: |
+          manifest="app/build/intermediates/merged_manifests/offlineRelease/processOfflineReleaseManifest/AndroidManifest.xml"
+          if [[ ! -f "$manifest" ]]; then
+            echo "Offline release merged manifest was not produced: $manifest" >&2
+            exit 1
+          fi
+          if grep -Eq 'android:name="android.permission\.(INTERNET|ACCESS_NETWORK_STATE)"' "$manifest"; then
+            echo "Offline release unexpectedly contains a network permission." >&2
+            grep -E 'android:name="android.permission\.(INTERNET|ACCESS_NETWORK_STATE)"' "$manifest" >&2
+            exit 1
+          fi
+          echo "Offline release manifest contains neither INTERNET nor ACCESS_NETWORK_STATE."

@@ -30,7 +30,7 @@ class KeyFilePreferenceManager @Inject constructor(
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             )
         } catch (e: Throwable) {
-            try { Log.w(TAG, "EncryptedSharedPreferences unavailable: ${e.message}") } catch (_: Throwable) {}
+            try { Log.w(TAG, "EncryptedSharedPreferences unavailable") } catch (_: Throwable) {}
             null
         }
 
@@ -45,7 +45,7 @@ class KeyFilePreferenceManager @Inject constructor(
                     try { Log.i(TAG, "Migrated key file URI to EncryptedSharedPreferences") } catch (_: Throwable) {}
                 }
             } catch (e: Exception) {
-                try { Log.w(TAG, "Failed migration of legacy key prefs: ${e.message}") } catch (_: Throwable) {}
+                try { Log.w(TAG, "Failed migration of legacy key prefs") } catch (_: Throwable) {}
             }
             encryptedPrefs
         } else {
@@ -67,11 +67,11 @@ class KeyFilePreferenceManager @Inject constructor(
                 context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Failed taking persistable URI permission for $uri: ${e.message}")
+            Log.w(TAG, "Failed taking persistable key-file URI permission")
         }
 
         prefs.edit().putString(KEY_FILE_URI, uri.toString()).apply()
-        Log.d(TAG, "Saved persistable key file URI: $uri")
+        Log.d(TAG, "Saved persistable key-file URI")
     }
 
     /**
@@ -85,7 +85,7 @@ class KeyFilePreferenceManager @Inject constructor(
             context.contentResolver.openInputStream(uri)?.close()
             uri
         } catch (e: Exception) {
-            Log.w(TAG, "Saved key file URI no longer accessible: ${e.message}")
+            Log.w(TAG, "Saved key-file URI is no longer accessible")
             null
         }
     }
@@ -116,9 +116,9 @@ class KeyFilePreferenceManager @Inject constructor(
     fun getFailedUnlockAttempts(): Int = prefs.getInt(KEY_FAILED_ATTEMPTS, 0)
 
     fun getLockoutRemainingSeconds(): Long {
-        val lockoutUntil = prefs.getLong(KEY_LOCKOUT_UNTIL, 0L)
-        val now = System.currentTimeMillis()
-        return if (lockoutUntil > now) (lockoutUntil - now + 999) / 1000 else 0L
+        val until = prefs.getLong(KEY_LOCKOUT_UNTIL, 0L)
+        val remaining = until - System.currentTimeMillis()
+        return if (remaining > 0L) (remaining + 999) / 1000 else 0L
     }
 
     fun recordFailedUnlockAttempt(): Long {
@@ -132,8 +132,7 @@ class KeyFilePreferenceManager @Inject constructor(
 
         val editor = prefs.edit().putInt(KEY_FAILED_ATTEMPTS, attempts)
         if (lockoutDurationMs > 0L) {
-            val lockoutUntil = System.currentTimeMillis() + lockoutDurationMs
-            editor.putLong(KEY_LOCKOUT_UNTIL, lockoutUntil)
+            editor.putLong(KEY_LOCKOUT_UNTIL, System.currentTimeMillis() + lockoutDurationMs)
         }
         editor.apply()
         return lockoutDurationMs / 1000

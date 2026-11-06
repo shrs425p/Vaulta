@@ -17,6 +17,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.vaulta.browser.BrowserScreen
+import com.vaulta.shrs.BuildConfig
 import com.vaulta.onboarding.create.CreateVaultScreen
 import com.vaulta.onboarding.recovery.RecoveryScreen
 import com.vaulta.onboarding.unlock.UnlockVaultScreen
@@ -82,7 +83,8 @@ fun VaultaNavHost(
             WelcomeScreen(
                 onCreateVaultClick = { navController.navigate(Routes.CREATE_VAULT) },
                 onUnlockVaultClick = { navController.navigate(Routes.UNLOCK_VAULT) },
-                onRecoveryClick = { navController.navigate(Routes.RECOVERY) }
+                onRecoveryClick = { navController.navigate(Routes.RECOVERY) },
+                isOfflineEdition = BuildConfig.IS_OFFLINE
             )
         }
 

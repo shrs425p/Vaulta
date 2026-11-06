@@ -27,6 +27,9 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 
 data class TotpItemState(
@@ -42,8 +45,11 @@ class CredentialsViewModel @Inject constructor(
     private val credentialDao: CredentialDao,
     private val encryptedIndex: EncryptedIndex,
     private val vaultSession: VaultSession,
-    private val clipboardAutoPurgeManager: ClipboardAutoPurgeManager
+    private val clipboardAutoPurgeManager: ClipboardAutoPurgeManager,
+    private val credentialArchive: CredentialArchive
 ) : ViewModel() {
+
+    private val credentialWriteMutex = Mutex()
 
     private val _selectedCategory = MutableStateFlow<CredentialCategory?>(null)
     val selectedCategory: StateFlow<CredentialCategory?> = _selectedCategory.asStateFlow()
@@ -112,41 +118,41 @@ class CredentialsViewModel @Inject constructor(
 
     fun saveCredential(credential: VaultCredential) {
         viewModelScope.launch(Dispatchers.IO) {
-            val existing = credentialDao.getCredentialById(credential.id)?.toDomain()
-            val updatedHistory = if (existing != null && existing.password.isNotBlank() && existing.password != credential.password) {
-                val newHistoryEntry = PasswordHistoryEntry(
-                    timestamp = System.currentTimeMillis(),
-                    password = existing.password
-                )
-                listOf(newHistoryEntry) + existing.passwordHistory
-            } else {
-                credential.passwordHistory
-            }
-
-            val finalCred = credential.copy(
-                modifiedAt = System.currentTimeMillis(),
-                passwordHistory = updatedHistory
-            )
-
-            credentialDao.insertCredential(finalCred.toEntity())
-            try {
-                vaultSession.withMasterKey { masterKey ->
-                    encryptedIndex.saveIndex(masterKey)
+            credentialWriteMutex.withLock {
+                val previous = credentialDao.getCredentialById(credential.id)
+                try {
+                    val existing = previous?.toDomain()
+                    val updatedHistory = if (existing != null && existing.password.isNotBlank() && existing.password != credential.password) {
+                        listOf(PasswordHistoryEntry(System.currentTimeMillis(), existing.password)) + existing.passwordHistory
+                    } else credential.passwordHistory
+                    val finalCred = credential.copy(modifiedAt = System.currentTimeMillis(), passwordHistory = updatedHistory)
+                    credentialDao.insertCredential(finalCred.toEntity())
+                    saveEncryptedSnapshot()
+                    _userMessage.value = "Credential saved successfully"
+                } catch (_: Exception) {
+                    runCatching {
+                        if (previous == null) credentialDao.getCredentialById(credential.id)?.let { credentialDao.deleteCredential(it) }
+                        else credentialDao.insertCredential(previous)
+                    }
+                    _userMessage.value = "Could not save password securely. The previous saved version was kept. Try again."
                 }
-            } catch (_: Exception) {}
-            _userMessage.value = "Credential saved successfully"
+            }
         }
     }
 
     fun deleteCredential(credential: VaultCredential) {
         viewModelScope.launch(Dispatchers.IO) {
-            credentialDao.deleteCredential(credential.toEntity())
-            try {
-                vaultSession.withMasterKey { masterKey ->
-                    encryptedIndex.saveIndex(masterKey)
+            credentialWriteMutex.withLock {
+                val previous = credentialDao.getCredentialById(credential.id) ?: return@withLock
+                try {
+                    credentialDao.deleteCredential(previous)
+                    saveEncryptedSnapshot()
+                    _userMessage.value = "Credential deleted"
+                } catch (_: Exception) {
+                    runCatching { credentialDao.insertCredential(previous) }
+                    _userMessage.value = "Could not save the deletion securely. The password was kept. Try again."
                 }
-            } catch (_: Exception) {}
-            _userMessage.value = "Credential deleted"
+            }
         }
     }
 
@@ -190,71 +196,56 @@ class CredentialsViewModel @Inject constructor(
         return TotpGenerator.generateTotp(totpSecret)
     }
 
-    fun importCsvVault(csvText: String) {
+    fun exportEncryptedArchive(password: CharArray, onReady: (ByteArray?) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val lines = csvText.lines().filter { it.isNotBlank() }
-                if (lines.isEmpty()) return@launch
-
-                val header = lines.first().split(",").map { it.trim().trim('"').lowercase() }
-                val titleIdx = header.indexOfFirst { it.contains("title") || it.contains("name") }.coerceAtLeast(0)
-                val userIdx = header.indexOfFirst { it.contains("user") || it.contains("login") || it.contains("email") }
-                val passIdx = header.indexOfFirst { it.contains("pass") || it.contains("secret") }
-                val urlIdx = header.indexOfFirst { it.contains("url") || it.contains("website") || it.contains("link") }
-                val notesIdx = header.indexOfFirst { it.contains("note") || it.contains("extra") }
-                val totpIdx = header.indexOfFirst { it.contains("totp") || it.contains("otp") || it.contains("2fa") }
-
-                var count = 0
-                for (i in 1 until lines.size) {
-                    val parts = parseCsvLine(lines[i])
-                    if (parts.isEmpty()) continue
-
-                    val title = parts.getOrNull(titleIdx)?.takeIf { it.isNotBlank() } ?: "Imported Item $i"
-                    val username = if (userIdx >= 0) parts.getOrNull(userIdx).orEmpty() else ""
-                    val password = if (passIdx >= 0) parts.getOrNull(passIdx).orEmpty() else ""
-                    val url = if (urlIdx >= 0) parts.getOrNull(urlIdx).orEmpty() else ""
-                    val notes = if (notesIdx >= 0) parts.getOrNull(notesIdx).orEmpty() else ""
-                    val totpSecret = if (totpIdx >= 0) parts.getOrNull(totpIdx).orEmpty() else ""
-
-                    val cred = VaultCredential(
-                        title = title,
-                        username = username,
-                        password = password,
-                        url = url,
-                        notes = notes,
-                        totpSecret = totpSecret
-                    )
-                    credentialDao.insertCredential(cred.toEntity())
-                    count++
-                }
-
-                vaultSession.withMasterKey { masterKey ->
-                    encryptedIndex.saveIndex(masterKey)
-                }
-                _userMessage.value = "Imported $count credentials into vault"
-            } catch (e: Exception) {
-                _userMessage.value = "CSV Import error: ${e.message}"
+                val creds = credentialDao.getAllCredentialsList().map { it.toDomain() }
+                val archive = credentialArchive.encrypt(creds, password)
+                withContext(Dispatchers.Main) { onReady(archive) }
+            } catch (_: Exception) {
+                password.fill('\u0000')
+                _userMessage.value = "Could not create encrypted archive"
+                withContext(Dispatchers.Main) { onReady(null) }
             }
         }
     }
 
-    private fun parseCsvLine(line: String): List<String> {
-        val result = mutableListOf<String>()
-        val current = StringBuilder()
-        var inQuotes = false
-        for (ch in line) {
-            if (ch == '"') {
-                inQuotes = !inQuotes
-            } else if (ch == ',' && !inQuotes) {
-                result.add(current.toString().trim())
-                current.clear()
-            } else {
-                current.append(ch)
+    fun importEncryptedArchive(archive: ByteArray, password: CharArray) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val imported = try {
+                credentialArchive.decrypt(archive, password)
+            } catch (_: Exception) {
+                password.fill('\u0000')
+                archive.fill(0)
+                _userMessage.value = "Could not open archive. Check the file and password."
+                return@launch
+            }
+            credentialWriteMutex.withLock {
+                val previous = credentialDao.getAllCredentialsList()
+                try {
+                    credentialDao.insertCredentials(imported.map { it.toEntity() })
+                    saveEncryptedSnapshot()
+                    _userMessage.value = "Imported ${imported.size} encrypted Vaulta credentials"
+                } catch (_: Exception) {
+                    runCatching {
+                        credentialDao.deleteAll()
+                        credentialDao.insertCredentials(previous)
+                    }
+                    _userMessage.value = "Import could not be saved securely; existing passwords were kept. Try again."
+                } finally {
+                    archive.fill(0)
+                }
             }
         }
-        result.add(current.toString().trim())
-        return result
     }
+
+    private suspend fun saveEncryptedSnapshot() {
+        vaultSession.withMasterKey { masterKey ->
+            encryptedIndex.saveIndex(masterKey)
+        }
+    }
+
+    fun reportArchiveReadError() { _userMessage.value = "Could not read encrypted Vaulta archive" }
 
     fun clearUserMessage() {
         _userMessage.value = null

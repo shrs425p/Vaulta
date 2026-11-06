@@ -4,10 +4,12 @@ import android.content.Context
 import android.util.Log
 import java.io.File
 import java.io.RandomAccessFile
+import java.security.SecureRandom
 
 object ViewerCachePurge {
 
     private const val TAG = "ViewerCachePurge"
+    private val secureRandom = SecureRandom()
 
     /**
      * Purges temporary viewer and shared cache directories by securely zeroing out
@@ -24,6 +26,10 @@ object ViewerCachePurge {
                 cleanDirectorySecurely(dir)
             }
         }
+
+        context.cacheDir.listFiles()
+            ?.filter { it.isFile && it.name.startsWith("vaulta-preview-") }
+            ?.forEach(::wipeAndDeleteFile)
     }
 
     private fun cleanDirectorySecurely(dir: File) {
@@ -38,7 +44,7 @@ object ViewerCachePurge {
             }
             dir.delete()
         } catch (e: Exception) {
-            Log.w(TAG, "Error cleaning cache dir ${dir.name}: ${e.message}")
+            Log.w(TAG, "Error cleaning cache directory")
         }
     }
 
@@ -46,13 +52,13 @@ object ViewerCachePurge {
         try {
             var remaining = file.length()
             if (remaining > 0) {
-                // Securely overwrite the ENTIRE file with zeroes in blocks before deletion
-                val zeroBuf = ByteArray(64 * 1024)
+                val randomBuf = ByteArray(64 * 1024)
                 RandomAccessFile(file, "rws").use { raf ->
                     raf.seek(0)
                     while (remaining > 0) {
-                        val toWrite = minOf(remaining, zeroBuf.size.toLong()).toInt()
-                        raf.write(zeroBuf, 0, toWrite)
+                        val toWrite = minOf(remaining, randomBuf.size.toLong()).toInt()
+                        secureRandom.nextBytes(randomBuf)
+                        raf.write(randomBuf, 0, toWrite)
                         remaining -= toWrite
                     }
                     raf.fd.sync()

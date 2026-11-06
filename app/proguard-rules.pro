@@ -12,6 +12,8 @@
 -dontwarn javax.naming.**
 -dontwarn org.ietf.jgss.**
 -dontwarn org.apache.http.**
+# DriveSyncClientImpl uses NetHttpTransport; the optional Apache adapter is excluded.
+-dontwarn com.google.api.client.http.apache.v2.ApacheHttpTransport
 
 # AndroidX Biometric
 -keep class androidx.biometric.** { *; }

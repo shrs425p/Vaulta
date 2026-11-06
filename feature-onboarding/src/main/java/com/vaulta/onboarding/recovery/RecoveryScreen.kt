@@ -47,6 +47,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import com.vaulta.vault.VaultPasswordPolicy
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -127,7 +128,7 @@ fun RecoveryScreen(
 
                     OutlinedTextField(
                         value = recoveryCode,
-                        onValueChange = { recoveryCode = it.uppercase() },
+                        onValueChange = { if (it.length <= 39) recoveryCode = it.uppercase() },
                         label = { Text("Enter 32-character recovery code") },
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth(),
@@ -206,7 +207,7 @@ fun RecoveryScreen(
 
                     OutlinedTextField(
                         value = newPassword,
-                        onValueChange = { newPassword = it },
+                        onValueChange = { if (it.length <= VaultPasswordPolicy.MAX_LENGTH) newPassword = it },
                         label = { Text("New Master Password (min 8 chars)") },
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth(),

@@ -13,6 +13,11 @@ import javax.inject.Singleton
  */
 interface VaultKeyFileSerializer {
 
+    companion object {
+        /** Maximum valid header and wrapped slots (including both length prefixes). */
+        const val MAX_SERIALIZED_SIZE = 2107
+    }
+
     /**
      * Serializes a [VaultKeyFile] to a [ByteArray].
      *
@@ -76,6 +81,9 @@ class VaultKeyFileSerializerImpl @Inject constructor() : VaultKeyFileSerializer 
 
     override fun deserialize(data: ByteArray): VaultKeyFile {
         try {
+            if (data.size > VaultKeyFileSerializer.MAX_SERIALIZED_SIZE) {
+                throw InvalidVaultKeyFileException("vault.key file exceeds the maximum supported size")
+            }
             val dis = DataInputStream(ByteArrayInputStream(data))
 
             // Magic (6 bytes)
@@ -106,14 +114,29 @@ class VaultKeyFileSerializerImpl @Inject constructor() : VaultKeyFileSerializer 
                     "Insecure Argon2 memory cost: $memoryCostKb KB (minimum required: $MIN_ARGON2_MEMORY_KB KB)"
                 )
             }
+            if (memoryCostKb > MAX_ARGON2_MEMORY_KB) {
+                throw InvalidVaultKeyFileException(
+                    "Argon2 memory cost exceeds maximum: $memoryCostKb KB (maximum: $MAX_ARGON2_MEMORY_KB KB)"
+                )
+            }
             if (iterations < MIN_ARGON2_ITERATIONS) {
                 throw InvalidVaultKeyFileException(
                     "Insecure Argon2 iteration count: $iterations (minimum required: $MIN_ARGON2_ITERATIONS)"
                 )
             }
+            if (iterations > MAX_ARGON2_ITERATIONS) {
+                throw InvalidVaultKeyFileException(
+                    "Argon2 iteration count exceeds maximum: $iterations (maximum: $MAX_ARGON2_ITERATIONS)"
+                )
+            }
             if (parallelism < MIN_ARGON2_PARALLELISM) {
                 throw InvalidVaultKeyFileException(
                     "Insecure Argon2 parallelism: $parallelism (minimum required: $MIN_ARGON2_PARALLELISM)"
+                )
+            }
+            if (parallelism > MAX_ARGON2_PARALLELISM) {
+                throw InvalidVaultKeyFileException(
+                    "Argon2 parallelism exceeds maximum: $parallelism (maximum: $MAX_ARGON2_PARALLELISM)"
                 )
             }
 
@@ -129,7 +152,7 @@ class VaultKeyFileSerializerImpl @Inject constructor() : VaultKeyFileSerializer 
 
             // Slot A
             val slotALength = dis.readInt()
-            if (slotALength < 0 || slotALength > MAX_SLOT_SIZE) {
+            if (slotALength < MIN_WRAPPED_KEY_SIZE || slotALength > MAX_SLOT_SIZE) {
                 throw InvalidVaultKeyFileException(
                     "Invalid slot A length: $slotALength"
                 )
@@ -139,13 +162,16 @@ class VaultKeyFileSerializerImpl @Inject constructor() : VaultKeyFileSerializer 
 
             // Slot B
             val slotBLength = dis.readInt()
-            if (slotBLength < 0 || slotBLength > MAX_SLOT_SIZE) {
+            if (slotBLength < MIN_WRAPPED_KEY_SIZE || slotBLength > MAX_SLOT_SIZE) {
                 throw InvalidVaultKeyFileException(
                     "Invalid slot B length: $slotBLength"
                 )
             }
             val slotB = ByteArray(slotBLength)
             dis.readFully(slotB)
+            if (dis.available() != 0) {
+                throw InvalidVaultKeyFileException("Unexpected trailing data in vault.key file")
+            }
 
             return VaultKeyFile(
                 magic = magic,
@@ -172,6 +198,9 @@ class VaultKeyFileSerializerImpl @Inject constructor() : VaultKeyFileSerializer 
         /** Maximum allowed wrapped key slot size to guard against corrupted data. */
         const val MAX_SLOT_SIZE = 1024
 
+        /** AES-GCM wrapped slots must contain at least a nonce and authentication tag. */
+        const val MIN_WRAPPED_KEY_SIZE = 12 + 16
+
         /** Minimum acceptable Argon2 memory cost to prevent KDF parameter downgrade attacks (16 MB). */
         const val MIN_ARGON2_MEMORY_KB = 16384
 
@@ -180,5 +209,9 @@ class VaultKeyFileSerializerImpl @Inject constructor() : VaultKeyFileSerializer 
 
         /** Minimum acceptable Argon2 parallelism lane count. */
         const val MIN_ARGON2_PARALLELISM = 1
+        // Keep accepted parameters at the app-generated settings to bound work for untrusted key files.
+        const val MAX_ARGON2_MEMORY_KB = 65536
+        const val MAX_ARGON2_ITERATIONS = 3
+        const val MAX_ARGON2_PARALLELISM = 4
     }
 }

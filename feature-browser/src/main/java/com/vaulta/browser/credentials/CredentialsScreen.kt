@@ -30,16 +30,21 @@ import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Note
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -52,7 +57,11 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -73,6 +82,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vaulta.crypto.PasswordStrength
 import com.vaulta.storage.credentials.CredentialCategory
 import com.vaulta.storage.credentials.VaultCredential
+import java.io.ByteArrayOutputStream
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -91,19 +101,48 @@ fun CredentialsScreen(
     var editingCredential by remember { mutableStateOf<VaultCredential?>(null) }
     var showEditScreen by remember { mutableStateOf(false) }
 
-    val csvLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
+    var pendingArchive by remember { mutableStateOf<ByteArray?>(null) }
+    var archivePassword by remember { mutableStateOf("") }
+    var archivePasswordConfirm by remember { mutableStateOf("") }
+    var archiveAction by remember { mutableStateOf<String?>(null) }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         if (uri != null) {
             try {
-                context.contentResolver.openInputStream(uri)?.use { stream ->
-                    val csvText = stream.bufferedReader().readText()
-                    viewModel.importCsvVault(csvText)
+                val bytes = context.contentResolver.openInputStream(uri)?.use { stream ->
+                    val output = ByteArrayOutputStream()
+                    val buffer = ByteArray(8192)
+                    var total = 0
+                    while (true) {
+                        val count = stream.read(buffer)
+                        if (count < 0) break
+                        total += count
+                        if (total > 10 * 1024 * 1024) throw IllegalArgumentException("Archive too large")
+                        output.write(buffer, 0, count)
+                    }
+                    buffer.fill(0)
+                    output.toByteArray()
                 }
+                if (bytes == null || bytes.size > 10 * 1024 * 1024) viewModel.reportArchiveReadError()
+                else { pendingArchive = bytes; archiveAction = "import" }
             } catch (e: Exception) {
-                viewModel.copyToClipboard("Error", "CSV read error: ${e.message}")
+                viewModel.reportArchiveReadError()
             }
         }
+    }
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        val bytes = pendingArchive
+        pendingArchive = null
+        if (uri != null && bytes != null) {
+            try { context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) } ?: viewModel.reportArchiveReadError() }
+            catch (_: Exception) { viewModel.reportArchiveReadError() }
+            finally { bytes.fill(0) }
+        } else bytes?.fill(0)
+    }
+    DisposableEffect(Unit) {
+        onDispose { pendingArchive?.fill(0); pendingArchive = null }
     }
 
     LaunchedEffect(userMessage) {
@@ -111,6 +150,48 @@ fun CredentialsScreen(
             snackbarHostState.showSnackbar(it)
             viewModel.clearUserMessage()
         }
+    }
+
+    if (archiveAction == "import" && pendingArchive != null) {
+        AlertDialog(
+            onDismissRequest = { pendingArchive?.fill(0); pendingArchive = null; archiveAction = null; archivePassword = "" },
+            title = { Text("Unlock Vaulta archive") },
+            text = {
+                Column {
+                    Text("This encrypted archive can only be read by Vaulta with its export password.")
+                    OutlinedTextField(archivePassword, { archivePassword = it }, label = { Text("Archive password") }, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), singleLine = true)
+                }
+            },
+            confirmButton = { TextButton(onClick = {
+                val bytes = pendingArchive
+                pendingArchive = null; archiveAction = null
+                if (bytes != null) viewModel.importEncryptedArchive(bytes, archivePassword.toCharArray())
+                archivePassword = ""
+            }) { Text("Import") } },
+            dismissButton = { TextButton(onClick = { pendingArchive?.fill(0); pendingArchive = null; archiveAction = null; archivePassword = "" }) { Text("Cancel") } }
+        )
+    }
+
+    if (archiveAction == "export") {
+        AlertDialog(
+            onDismissRequest = { archiveAction = null; archivePassword = ""; archivePasswordConfirm = "" },
+            title = { Text("Export encrypted archive") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Only Vaulta password records will be exported. Choose a strong password with at least 12 characters. Other apps will see encrypted data only.")
+                    OutlinedTextField(archivePassword, { archivePassword = it }, label = { Text("Archive password") }, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), singleLine = true)
+                    OutlinedTextField(archivePasswordConfirm, { archivePasswordConfirm = it }, label = { Text("Confirm password") }, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), singleLine = true)
+                }
+            },
+            confirmButton = { TextButton(enabled = archivePassword.length >= 12 && archivePassword == archivePasswordConfirm, onClick = {
+                val secret = archivePassword.toCharArray()
+                archivePassword = ""; archivePasswordConfirm = ""; archiveAction = null
+                viewModel.exportEncryptedArchive(secret) { bytes ->
+                    if (bytes != null) { pendingArchive = bytes; exportLauncher.launch("vaulta-passwords.vaultacreds") }
+                }
+            }) { Text("Create archive") } },
+            dismissButton = { TextButton(onClick = { archiveAction = null; archivePassword = ""; archivePasswordConfirm = "" }) { Text("Cancel") } }
+        )
     }
 
     if (viewingCredential != null) {
@@ -165,7 +246,7 @@ fun CredentialsScreen(
                 .padding(paddingValues)
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
-            // Search Input & CSV Import Button
+            // Search and encrypted Vaulta archive actions
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -181,14 +262,15 @@ fun CredentialsScreen(
                     singleLine = true
                 )
 
-                IconButton(
-                    onClick = { csvLauncher.launch("*/*") }
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.FileUpload,
-                        contentDescription = "Import CSV Vault",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    TextButton(onClick = { archiveAction = "import"; importLauncher.launch(arrayOf("application/octet-stream", "application/vnd.vaulta.credentials")) }, contentPadding = PaddingValues(horizontal = 4.dp)) {
+                        Icon(Icons.Default.FileUpload, contentDescription = "Import encrypted Vaulta archive")
+                        Text("Import")
+                    }
+                    TextButton(onClick = { archiveAction = "export"; archivePassword = ""; archivePasswordConfirm = "" }, contentPadding = PaddingValues(horizontal = 4.dp)) {
+                        Icon(Icons.Default.FileDownload, contentDescription = "Export encrypted Vaulta archive")
+                        Text("Export")
+                    }
                 }
             }
 
@@ -245,7 +327,7 @@ fun CredentialsScreen(
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(
-                            text = "Tap + below to store encrypted passwords, or tap upload to import CSV",
+                            text = "Tap + below to store encrypted passwords, or import a protected Vaulta archive",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -287,6 +369,32 @@ private fun CredentialListItem(
     onDelete: () -> Unit,
     calculateStrength: (String) -> PasswordStrength
 ) {
+    var menuExpanded by remember(credential.id) { mutableStateOf(false) }
+    var confirmDelete by remember(credential.id) { mutableStateOf(false) }
+
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Delete credential?") },
+            text = { Text("${credential.title} will be removed from your encrypted vault.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmDelete = false
+                        onDelete()
+                    }
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -336,6 +444,34 @@ private fun CredentialListItem(
                 if (credential.password.isNotBlank()) {
                     val strength = calculateStrength(credential.password)
                     StrengthBadge(strength)
+                }
+                Box {
+                    IconButton(onClick = { menuExpanded = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "Credential options")
+                    }
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Edit") },
+                            leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                            onClick = {
+                                menuExpanded = false
+                                onEdit()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                            leadingIcon = {
+                                Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                confirmDelete = true
+                            }
+                        )
+                    }
                 }
             }
 

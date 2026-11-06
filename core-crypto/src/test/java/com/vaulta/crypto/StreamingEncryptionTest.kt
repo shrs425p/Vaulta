@@ -166,4 +166,16 @@ class StreamingEncryptionTest {
             streamingEncryption.decryptStream(malformedBuffer, decryptedOutput, fileKey)
         }
     }
+
+    @Test
+    fun decryptStream_rejectsTamperedStreamVersion() {
+        val fileKey = randomProvider.nextBytes(32)
+        val encryptedOutput = Buffer()
+        streamingEncryption.encryptStream(Buffer().writeUtf8("authenticated metadata"), encryptedOutput, fileKey)
+        val tampered = encryptedOutput.readByteArray().also { it[0] = 2 }
+
+        assertThrows(IOException::class.java) {
+            streamingEncryption.decryptStream(Buffer().write(tampered), Buffer(), fileKey)
+        }
+    }
 }

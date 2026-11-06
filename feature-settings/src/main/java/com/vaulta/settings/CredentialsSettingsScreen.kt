@@ -55,6 +55,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import com.vaulta.vault.VaultPasswordPolicy
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -264,7 +265,7 @@ fun CredentialsSettingsScreen(
                         OutlinedTextField(
                             value = newPassword,
                             onValueChange = {
-                                newPassword = it
+                                if (it.length <= VaultPasswordPolicy.MAX_LENGTH) newPassword = it
                                 localError = null
                             },
                             label = { Text("New Master Password (min 8 chars)") },
@@ -286,7 +287,7 @@ fun CredentialsSettingsScreen(
                         OutlinedTextField(
                             value = confirmPassword,
                             onValueChange = {
-                                confirmPassword = it
+                                if (it.length <= VaultPasswordPolicy.MAX_LENGTH) confirmPassword = it
                                 localError = null
                             },
                             label = { Text("Confirm New Password") },
@@ -320,8 +321,8 @@ fun CredentialsSettingsScreen(
                                     localError = "Please enter your current password"
                                     return@Button
                                 }
-                                if (newPassword.length < 8) {
-                                    localError = "New password must be at least 8 characters"
+                                if (newPassword.length !in VaultPasswordPolicy.MIN_LENGTH..VaultPasswordPolicy.MAX_LENGTH) {
+                                    localError = "New password must be between ${VaultPasswordPolicy.MIN_LENGTH} and ${VaultPasswordPolicy.MAX_LENGTH} characters"
                                     return@Button
                                 }
                                 if (newPassword != confirmPassword) {

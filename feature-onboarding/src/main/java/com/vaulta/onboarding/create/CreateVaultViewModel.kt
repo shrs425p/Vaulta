@@ -5,7 +5,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vaulta.crypto.SecureMemory
 import com.vaulta.vault.VaultOperations
+import com.vaulta.vault.VaultPasswordPolicy
 import com.vaulta.vault.preferences.KeyFilePreferenceManager
+import com.vaulta.vault.clipboard.ClipboardAutoPurgeManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,15 +25,20 @@ sealed interface CreateVaultUiState {
 @HiltViewModel
 class CreateVaultViewModel @Inject constructor(
     private val vaultOperations: VaultOperations,
-    private val keyFilePreferenceManager: KeyFilePreferenceManager
+    private val keyFilePreferenceManager: KeyFilePreferenceManager,
+    private val clipboardAutoPurgeManager: ClipboardAutoPurgeManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<CreateVaultUiState>(CreateVaultUiState.Idle)
     val uiState: StateFlow<CreateVaultUiState> = _uiState.asStateFlow()
 
+    fun copyRecoveryCode(code: String) {
+        clipboardAutoPurgeManager.copySensitiveText("Recovery Code", code, purgeDelayMs = 60_000L)
+    }
+
     fun createVault(passwordChars: CharArray, keyFileUri: Uri) {
-        if (passwordChars.size < 8) {
-            _uiState.value = CreateVaultUiState.Error("Password must be at least 8 characters long")
+        if (!VaultPasswordPolicy.accepts(passwordChars)) {
+            _uiState.value = CreateVaultUiState.Error("Password must be between ${VaultPasswordPolicy.MIN_LENGTH} and ${VaultPasswordPolicy.MAX_LENGTH} characters long")
             SecureMemory.wipe(passwordChars)
             return
         }

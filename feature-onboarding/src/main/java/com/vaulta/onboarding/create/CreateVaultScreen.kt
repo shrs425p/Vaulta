@@ -1,12 +1,7 @@
 package com.vaulta.onboarding.create
 
-import android.content.ClipData
-import android.content.ClipDescription
-import android.content.ClipboardManager
 import android.content.Context
 import android.net.Uri
-import android.os.Build
-import android.os.PersistableBundle
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -47,7 +42,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,8 +55,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import com.vaulta.vault.VaultPasswordPolicy
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -80,7 +73,6 @@ fun CreateVaultScreen(
     var localError by remember { mutableStateOf<String?>(null) }
 
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
     var codeToExport by remember { mutableStateOf<String?>(null) }
 
     val saveRecoveryTextLauncher = rememberLauncherForActivityResult(
@@ -186,31 +178,8 @@ fun CreateVaultScreen(
                         ) {
                             OutlinedButton(
                                 onClick = {
-                                    val androidClipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                                    if (androidClipboard != null) {
-                                        val clipData = ClipData.newPlainText("Recovery Code", state.recoveryCode).apply {
-                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                                description.extras = PersistableBundle().apply {
-                                                    putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
-                                                }
-                                            }
-                                        }
-                                        androidClipboard.setPrimaryClip(clipData)
-                                        Toast.makeText(context, "Recovery code copied (auto-clears in 60s)", Toast.LENGTH_SHORT).show()
-
-                                        coroutineScope.launch {
-                                            delay(60_000L)
-                                            try {
-                                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                                                    androidClipboard.clearPrimaryClip()
-                                                } else {
-                                                    androidClipboard.setPrimaryClip(
-                                                        ClipData.newPlainText("", "")
-                                                    )
-                                                }
-                                            } catch (_: Exception) {}
-                                        }
-                                    }
+                                    viewModel.copyRecoveryCode(state.recoveryCode)
+                                    Toast.makeText(context, "Recovery code copied (auto-clears in 60s)", Toast.LENGTH_SHORT).show()
                                 },
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier
@@ -282,7 +251,7 @@ fun CreateVaultScreen(
                         OutlinedTextField(
                             value = password,
                             onValueChange = {
-                                password = it
+                                if (it.length <= VaultPasswordPolicy.MAX_LENGTH) password = it
                                 localError = null
                             },
                             label = { Text("Master Password") },
@@ -303,7 +272,7 @@ fun CreateVaultScreen(
                         OutlinedTextField(
                             value = confirmPassword,
                             onValueChange = {
-                                confirmPassword = it
+                                if (it.length <= VaultPasswordPolicy.MAX_LENGTH) confirmPassword = it
                                 localError = null
                             },
                             label = { Text("Confirm Master Password") },
@@ -339,8 +308,8 @@ fun CreateVaultScreen(
 
                         Button(
                             onClick = {
-                                if (password.length < 8) {
-                                    localError = "Password must be at least 8 characters"
+                                if (password.length !in VaultPasswordPolicy.MIN_LENGTH..VaultPasswordPolicy.MAX_LENGTH) {
+                                    localError = "Password must be between ${VaultPasswordPolicy.MIN_LENGTH} and ${VaultPasswordPolicy.MAX_LENGTH} characters"
                                     return@Button
                                 }
                                 if (password != confirmPassword) {

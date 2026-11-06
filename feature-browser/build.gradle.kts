@@ -8,7 +8,7 @@ plugins {
 
 android {
     namespace = "com.vaulta.browser"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 26
@@ -56,5 +56,6 @@ dependencies {
     testImplementation(libs.truth)
     testImplementation(libs.mockk)
     testImplementation(libs.coroutines.test)
+    testImplementation(libs.json)
     debugImplementation(libs.compose.ui.tooling)
 }

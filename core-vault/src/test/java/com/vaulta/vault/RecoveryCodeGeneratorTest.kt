@@ -5,6 +5,7 @@ import com.vaulta.vault.recovery.RecoveryCodeGenerator
 import com.vaulta.vault.recovery.RecoveryCodeGeneratorImpl
 import org.junit.Before
 import org.junit.Test
+import org.junit.Assert.assertThrows
 
 class RecoveryCodeGeneratorTest {
 
@@ -33,6 +34,16 @@ class RecoveryCodeGeneratorTest {
         val chars = generator.toCharArray(code)
         assertThat(chars.size).isEqualTo(32)
         assertThat(chars.none { it == '-' }).isTrue()
+    }
+
+    @Test
+    fun toCharArray_rejectsOversizedOrMalformedCodesBeforeDerivation() {
+        assertThrows(IllegalArgumentException::class.java) {
+            generator.toCharArray("A".repeat(1_000_000))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            generator.toCharArray("ABCD-1234-EFGH-5678-JKML-9012-MNPQ-345!")
+        }
     }
 
     @Test

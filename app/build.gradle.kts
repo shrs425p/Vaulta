@@ -10,14 +10,14 @@ plugins {
 
 android {
     namespace = "com.vaulta.shrs"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.vaulta.shrs"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        targetSdk = 36
+        versionCode = 2
+        versionName = "1.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -35,32 +35,43 @@ android {
         }
     }
 
-    val localProperties = Properties()
-    val localPropertiesFile = rootProject.file("local.properties")
-    if (localPropertiesFile.exists()) {
-        localProperties.load(localPropertiesFile.inputStream())
+    val localProperties = Properties().apply {
+        val localPropertiesFile = rootProject.file("local.properties")
+        if (localPropertiesFile.exists()) {
+            localPropertiesFile.inputStream().use { stream ->
+                load(stream)
+            }
+        }
     }
 
-    val storeFilePath = localProperties.getProperty("RELEASE_STORE_FILE")
-    val hasValidReleaseKey = storeFilePath != null && file(storeFilePath).exists()
+    val storeFilePath = providers.environmentVariable("VAULTA_RELEASE_STORE_FILE").orNull
+        ?: providers.environmentVariable("RELEASE_STORE_FILE").orNull
+        ?: localProperties.getProperty("RELEASE_STORE_FILE")
+    val releaseStorePassword = providers.environmentVariable("VAULTA_RELEASE_KEYSTORE_PASSWORD").orNull
+        ?: providers.environmentVariable("RELEASE_KEYSTORE_PASSWORD").orNull
+        ?: localProperties.getProperty("RELEASE_KEYSTORE_PASSWORD")
+    val releaseKeyAlias = providers.environmentVariable("VAULTA_RELEASE_KEY_ALIAS").orNull
+        ?: providers.environmentVariable("RELEASE_KEY_ALIAS").orNull
+        ?: localProperties.getProperty("RELEASE_KEY_ALIAS")
+    val releaseKeyPassword = providers.environmentVariable("VAULTA_RELEASE_KEY_PASSWORD").orNull
+        ?: providers.environmentVariable("RELEASE_KEY_PASSWORD").orNull
+        ?: localProperties.getProperty("RELEASE_KEY_PASSWORD")
+
+    val hasValidReleaseKey = listOf(storeFilePath, releaseStorePassword, releaseKeyAlias, releaseKeyPassword).all { !it.isNullOrBlank() } &&
+        (!storeFilePath.isNullOrBlank() && file(storeFilePath).exists())
 
     if (hasValidReleaseKey) {
         signingConfigs {
             create("releaseKey") {
-                storeFile = file(storeFilePath)
-                storePassword = localProperties.getProperty("RELEASE_KEYSTORE_PASSWORD")
-                keyAlias = localProperties.getProperty("RELEASE_KEY_ALIAS")
-                keyPassword = localProperties.getProperty("RELEASE_KEY_PASSWORD")
+                storeFile = file(requireNotNull(storeFilePath))
+                storePassword = requireNotNull(releaseStorePassword)
+                keyAlias = requireNotNull(releaseKeyAlias)
+                keyPassword = requireNotNull(releaseKeyPassword)
             }
         }
     }
 
     buildTypes {
-        debug {
-            if (hasValidReleaseKey) {
-                signingConfig = signingConfigs.getByName("releaseKey")
-            }
-        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -109,7 +120,6 @@ dependencies {
 
     implementation(libs.biometric)
     implementation(libs.core.ktx)
-    implementation(libs.coil.compose)
     implementation(libs.activity.compose)
     implementation(libs.lifecycle.runtime)
     implementation(libs.lifecycle.viewmodel)
@@ -135,5 +145,3 @@ dependencies {
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.test.manifest)
 }
-
-

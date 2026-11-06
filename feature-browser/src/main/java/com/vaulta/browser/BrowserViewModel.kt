@@ -82,6 +82,8 @@ class BrowserViewModel @Inject constructor(
     val vaultSession: VaultSession
 ) : ViewModel() {
 
+    val isSyncAvailable: Boolean get() = syncProvider.isAvailable
+
     internal var ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 
     private val _currentParentId = MutableStateFlow<String?>(null)
@@ -238,7 +240,7 @@ class BrowserViewModel @Inject constructor(
                     encryptedIndex.saveIndex(masterKey)
                 }
             } catch (e: Exception) {
-                Log.e("VaultaBrowser", "Failed to save index after createFolder", e)
+                Log.e("VaultaBrowser", "Failed to save index after createFolder")
             }
         }
     }
@@ -304,7 +306,7 @@ class BrowserViewModel @Inject constructor(
                     _userMessage.value = "No files matched organization categories"
                 }
             } catch (e: Exception) {
-                Log.e("VaultaBrowser", "Failed to auto-organize files", e)
+                Log.e("VaultaBrowser", "Failed to auto-organize files")
                 _error.value = "Failed to organize: ${e.message}"
             } finally {
                 _isLoading.value = false
@@ -344,7 +346,7 @@ class BrowserViewModel @Inject constructor(
                         percentage = 0
                     )
 
-                    Log.d("VaultaBrowser", "📥 [${index + 1}/${uris.size}] Starting import: '$fileName', size: $fileSize bytes, mime: $mimeType")
+                    Log.d("VaultaBrowser", "Starting import item ${index + 1} of ${uris.size}")
 
                     val blobName = UUID.randomUUID().toString() + ".blob"
                     val fileSalt = keyDerivation.generateSalt()
@@ -368,7 +370,7 @@ class BrowserViewModel @Inject constructor(
                             SecureMemory.wipe(fileKey)
                         }
 
-                        val initialPolicy = if (appPreferencesManager.defaultSyncPolicy.value == com.vaulta.vault.preferences.DefaultSyncPolicy.SELECTIVE_MANUAL) {
+                        val initialPolicy = if (!syncProvider.isAvailable || appPreferencesManager.defaultSyncPolicy.value == com.vaulta.vault.preferences.DefaultSyncPolicy.SELECTIVE_MANUAL) {
                             SyncPolicy.LOCAL_ONLY
                         } else {
                             SyncPolicy.AUTO_SYNC
@@ -390,7 +392,7 @@ class BrowserViewModel @Inject constructor(
                             isAvailableLocally = true
                         )
                         encryptedIndex.addEntry(entry)
-                        Log.d("VaultaBrowser", "✅ File '$fileName' ($fileSize bytes) encrypted and added to vault successfully!")
+                        Log.d("VaultaBrowser", "File import completed")
                     }
                 }
                 vaultSession.withMasterKey { masterKey ->
@@ -402,7 +404,7 @@ class BrowserViewModel @Inject constructor(
                     _pendingDeleteUris.value = uris
                 }
             } catch (e: Exception) {
-                Log.e("VaultaBrowser", "❌ Failed to encrypt and import files", e)
+                Log.e("VaultaBrowser", "Failed to encrypt and import files")
                 _error.value = "Failed to encrypt and import: ${e.message}"
             } finally {
                 _importProgress.value = null
@@ -444,6 +446,7 @@ class BrowserViewModel @Inject constructor(
     }
 
     fun uploadEntryToCloud(id: String) {
+        if (!syncProvider.isAvailable) return
         viewModelScope.launch(ioDispatcher) {
             try {
                 val entry = encryptedIndex.getEntry(id) ?: return@launch
@@ -464,6 +467,7 @@ class BrowserViewModel @Inject constructor(
     }
 
     fun removeEntryFromCloud(id: String) {
+        if (!syncProvider.isAvailable) return
         viewModelScope.launch(ioDispatcher) {
             try {
                 val entry = encryptedIndex.getEntry(id) ?: return@launch
@@ -480,6 +484,7 @@ class BrowserViewModel @Inject constructor(
     }
 
     fun downloadEntryLocally(id: String) {
+        if (!syncProvider.isAvailable) return
         viewModelScope.launch(ioDispatcher) {
             try {
                 _isLoading.value = true
@@ -499,6 +504,7 @@ class BrowserViewModel @Inject constructor(
     }
 
     fun downloadAllCloudFiles() {
+        if (!syncProvider.isAvailable) return
         viewModelScope.launch(ioDispatcher) {
             try {
                 _isLoading.value = true

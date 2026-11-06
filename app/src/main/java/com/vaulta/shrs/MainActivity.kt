@@ -26,35 +26,27 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Set initial FLAG_SECURE safely
+
+        // Apply protection before the first frame can be drawn or captured.
         if (appPreferencesManager.isScreenProtectionEnabled.value) {
-            window.setFlags(
-                WindowManager.LayoutParams.FLAG_SECURE,
-                WindowManager.LayoutParams.FLAG_SECURE
-            )
+            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
         }
 
         enableEdgeToEdge()
 
         setContent {
+            val isScreenProtectionEnabled by appPreferencesManager.isScreenProtectionEnabled.collectAsStateWithLifecycle()
             val themeStyle by appPreferencesManager.themeStyle.collectAsStateWithLifecycle()
             val themeMode by appPreferencesManager.themeMode.collectAsStateWithLifecycle()
-            val isScreenProtectionEnabled by appPreferencesManager.isScreenProtectionEnabled.collectAsStateWithLifecycle()
-
-            // Update window flag ONLY when its value actually changes to prevent surface recreation
             LaunchedEffect(isScreenProtectionEnabled) {
-                val currentFlags = window.attributes.flags
-                val isSecure = (currentFlags and WindowManager.LayoutParams.FLAG_SECURE) != 0
-                if (isScreenProtectionEnabled && !isSecure) {
-                    window.setFlags(
-                        WindowManager.LayoutParams.FLAG_SECURE,
-                        WindowManager.LayoutParams.FLAG_SECURE
-                    )
-                } else if (!isScreenProtectionEnabled && isSecure) {
+                if (isScreenProtectionEnabled) {
+                    window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                } else {
                     window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
                 }
             }
-
             VaultaTheme(
                 themeStyle = themeStyle,
                 themeMode = themeMode

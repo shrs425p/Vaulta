@@ -8,7 +8,7 @@ plugins {
 
 android {
     namespace = "com.vaulta.viewer"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 26
@@ -35,7 +35,6 @@ dependencies {
     implementation(project(":core-storage"))
     implementation(libs.core.ktx)
     implementation(libs.okio)
-    implementation(libs.coil.compose)
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui)
     implementation(libs.media3.datasource)
