@@ -35,6 +35,6 @@ jobs:
       contents: read
     steps:
       - name: Check pull request dependencies for known vulnerabilities
-        uses: actions/dependency-review-action@v4
+        uses: actions/dependency-review-action@v5
         with:
           fail-on-severity: high
