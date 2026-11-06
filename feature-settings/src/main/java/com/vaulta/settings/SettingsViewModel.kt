@@ -10,6 +10,7 @@ import com.vaulta.storage.index.VaultStats
 import com.vaulta.vault.sync.CloudStorageStats
 import com.vaulta.vault.sync.SyncProvider
 import com.vaulta.vault.VaultOperations
+import com.vaulta.vault.VaultPasswordPolicy
 import com.vaulta.vault.biometric.BiometricUnlockManager
 import com.vaulta.vault.preferences.AppPreferencesManager
 import com.vaulta.vault.preferences.AppThemeMode
@@ -225,8 +226,8 @@ class SettingsViewModel @Inject constructor(
         newPassword: CharArray,
         keyFileUri: Uri
     ) {
-        if (newPassword.size < 8) {
-            _uiState.value = SettingsUiState.Error("New password must be at least 8 characters")
+        if (!VaultPasswordPolicy.accepts(newPassword)) {
+            _uiState.value = SettingsUiState.Error("New password must be between ${VaultPasswordPolicy.MIN_LENGTH} and ${VaultPasswordPolicy.MAX_LENGTH} characters")
             SecureMemory.wipe(currentPassword)
             SecureMemory.wipe(newPassword)
             return

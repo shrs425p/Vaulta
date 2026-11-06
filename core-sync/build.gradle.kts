@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.vaulta.sync"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 26
@@ -23,6 +23,15 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+}
+
+// DriveSyncClientImpl explicitly uses Google NetHttpTransport. Do not package
+// the unused Apache transport/client stack, which includes trust-all helpers.
+configurations.configureEach {
+    exclude(group = "com.google.http-client", module = "google-http-client-apache-v2")
+    exclude(group = "org.apache.httpcomponents", module = "httpclient")
+    exclude(group = "org.apache.httpcomponents", module = "httpcore")
+    exclude(group = "commons-logging", module = "commons-logging")
 }
 
 dependencies {
@@ -42,7 +51,6 @@ dependencies {
     implementation(libs.retrofit)
     implementation(libs.retrofit.moshi)
     implementation(libs.okhttp)
-    implementation(libs.okhttp.logging)
     ksp(libs.hilt.compiler)
     ksp(libs.androidx.hilt.compiler)
 

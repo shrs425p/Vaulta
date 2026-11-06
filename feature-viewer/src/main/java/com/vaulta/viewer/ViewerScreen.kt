@@ -3,17 +3,13 @@ package com.vaulta.viewer
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
-import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.view.ViewGroup
-import android.webkit.MimeTypeMap
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
@@ -58,7 +54,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.RotateRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AspectRatio
@@ -68,18 +63,15 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FormatColorFill
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.LightMode
-import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.Search
@@ -179,8 +171,6 @@ fun ViewerScreen(
     onNavigateBack: () -> Unit,
     viewModel: ViewerViewModel = hiltViewModel()
 ) {
-    val context = LocalContext.current
-
     LaunchedEffect(entryId) {
         viewModel.loadFile(entryId)
     }
@@ -195,21 +185,6 @@ fun ViewerScreen(
         is ViewerUiState.TextReady -> state.entry
         is ViewerUiState.DocumentReady -> state.entry
         is ViewerUiState.BinaryReady -> state.entry
-        else -> null
-    }
-
-    val currentData: ByteArray? = when (val state = uiState) {
-        is ViewerUiState.ImageReady -> state.data
-        is ViewerUiState.CsvReady -> state.data
-        is ViewerUiState.TextReady -> state.data
-        is ViewerUiState.DocumentReady -> state.data
-        else -> null
-    }
-
-    val currentFile: File? = when (val state = uiState) {
-        is ViewerUiState.ImageReady -> state.imageFile
-        is ViewerUiState.PdfReady -> state.pdfFile
-        is ViewerUiState.BinaryReady -> state.file
         else -> null
     }
 
@@ -237,20 +212,6 @@ fun ViewerScreen(
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
                     },
-                    actions = {
-                        if (currentEntry != null && (currentData != null || currentFile != null)) {
-                            IconButton(onClick = {
-                                openWithExternalApp(context, currentEntry, currentData, currentFile)
-                            }) {
-                                Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "Open with external app")
-                            }
-                            IconButton(onClick = {
-                                plaintextBoundaryDisabled(context)
-                            }) {
-                                Icon(Icons.Default.Download, contentDescription = "Export Decrypted")
-                            }
-                        }
-                    }
                 )
             }
         }
@@ -288,12 +249,6 @@ fun ViewerScreen(
                         dataSourceFactory = state.dataSourceFactory,
                         entry = state.entry,
                         onNavigateBack = onNavigateBack,
-                        onOpenExternal = {
-                            plaintextBoundaryDisabled(context)
-                        },
-                        onExport = {
-                            plaintextBoundaryDisabled(context)
-                        },
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -319,8 +274,6 @@ fun ViewerScreen(
                 is ViewerUiState.CsvReady -> {
                     CsvViewer(
                         state = state,
-                        onExport = { plaintextBoundaryDisabled(context) },
-                        onOpenExternal = { plaintextBoundaryDisabled(context) },
                         onCopySensitiveText = { viewModel.copySensitiveText("CSV", it) },
                         modifier = Modifier.fillMaxSize()
                     )
@@ -329,12 +282,6 @@ fun ViewerScreen(
                 is ViewerUiState.DocumentReady -> {
                     DocumentView(
                         state = state,
-                        onOpenExternal = {
-                            plaintextBoundaryDisabled(context)
-                        },
-                        onExport = {
-                            plaintextBoundaryDisabled(context)
-                        },
                         onCopySensitiveText = { viewModel.copySensitiveText("Document", it) }
                     )
                 }
@@ -374,24 +321,6 @@ fun ViewerScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
                         )
-                        Spacer(modifier = Modifier.height(24.dp))
-                        Button(
-                            onClick = { plaintextBoundaryDisabled(context) },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Open in External Viewer")
-                        }
-                        Spacer(modifier = Modifier.height(12.dp))
-                        OutlinedButton(
-                            onClick = { plaintextBoundaryDisabled(context) },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.Download, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Export Decrypted File")
-                        }
                     }
                 }
 
@@ -480,8 +409,6 @@ private fun VideoPlayer(
     dataSourceFactory: EncryptedMediaDataSource.Factory,
     entry: VaultEntry,
     onNavigateBack: () -> Unit,
-    onOpenExternal: () -> Unit,
-    onExport: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -653,20 +580,6 @@ private fun VideoPlayer(
                     Icon(
                         Icons.Default.AspectRatio,
                         contentDescription = "Aspect Ratio",
-                        tint = Color.White
-                    )
-                }
-                IconButton(onClick = onOpenExternal) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.OpenInNew,
-                        contentDescription = "Open with external app",
-                        tint = Color.White
-                    )
-                }
-                IconButton(onClick = onExport) {
-                    Icon(
-                        Icons.Default.Download,
-                        contentDescription = "Export Decrypted",
                         tint = Color.White
                     )
                 }
@@ -1077,17 +990,6 @@ private fun PdfViewer(
                             modifier = Modifier.size(20.dp)
                         )
                     }
-                    IconButton(
-                        onClick = { printPdf(context, pdfFile, entry.name) },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Print,
-                            contentDescription = "Print Document",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
                 }
             }
         }
@@ -1344,8 +1246,6 @@ private fun PdfViewer(
 @Composable
 private fun CsvViewer(
     state: ViewerUiState.CsvReady,
-    onExport: () -> Unit,
-    onOpenExternal: () -> Unit,
     onCopySensitiveText: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -1475,53 +1375,24 @@ private fun CsvViewer(
             }
         }
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Button(
-                onClick = onOpenExternal,
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null)
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Open in Sheets/Excel")
-            }
-            OutlinedButton(
-                onClick = onExport,
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(Icons.Default.Download, contentDescription = null)
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Export")
-            }
-        }
     }
 }
 
 @Composable
 private fun DocumentView(
     state: ViewerUiState.DocumentReady,
-    onOpenExternal: () -> Unit,
-    onExport: () -> Unit,
     onCopySensitiveText: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     if (state.slides.isNotEmpty()) {
         PresentationViewer(
             state = state,
-            onOpenExternal = onOpenExternal,
-            onExport = onExport,
             onCopySensitiveText = onCopySensitiveText,
             modifier = modifier
         )
     } else {
         WordDocumentViewer(
             state = state,
-            onOpenExternal = onOpenExternal,
-            onExport = onExport,
             onCopySensitiveText = onCopySensitiveText,
             modifier = modifier
         )
@@ -1531,8 +1402,6 @@ private fun DocumentView(
 @Composable
 private fun PresentationViewer(
     state: ViewerUiState.DocumentReady,
-    onOpenExternal: () -> Unit,
-    onExport: () -> Unit,
     onCopySensitiveText: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -2030,8 +1899,6 @@ private fun PresentationViewer(
 @Composable
 private fun WordDocumentViewer(
     state: ViewerUiState.DocumentReady,
-    onOpenExternal: () -> Unit,
-    onExport: () -> Unit,
     onCopySensitiveText: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -2492,50 +2359,6 @@ private fun highlightText(fullText: String, query: String, highlightColor: Color
             startIndex = index + query.length
         }
     }
-}
-
-private fun printPdf(context: Context, pdfFile: File, title: String) {
-    plaintextBoundaryDisabled(context)
-}
-
-private fun plaintextBoundaryDisabled(context: Context) {
-    Toast.makeText(
-        context,
-        "Export, printing, and external apps are disabled to keep decrypted data in memory.",
-        Toast.LENGTH_LONG
-    ).show()
-}
-
-private fun getExplicitMimeType(ext: String): String? = when (ext) {
-    "pdf" -> "application/pdf"
-    "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    "doc" -> "application/msword"
-    "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    "xls" -> "application/vnd.ms-excel"
-    "pptx" -> "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-    "ppt" -> "application/vnd.ms-powerpoint"
-    "odt" -> "application/vnd.oasis.opendocument.text"
-    "ods" -> "application/vnd.oasis.opendocument.spreadsheet"
-    "odp" -> "application/vnd.oasis.opendocument.presentation"
-    "rtf" -> "application/rtf"
-    "csv" -> "text/csv"
-    "tsv" -> "text/tab-separated-values"
-    "txt", "log" -> "text/plain"
-    "json" -> "application/json"
-    "xml" -> "application/xml"
-    "html", "htm" -> "text/html"
-    "epub" -> "application/epub+zip"
-    "zip" -> "application/zip"
-    else -> null
-}
-
-private fun openWithExternalApp(
-    context: Context,
-    entry: VaultEntry,
-    data: ByteArray?,
-    existingFile: File? = null
-) {
-    plaintextBoundaryDisabled(context)
 }
 
 private fun formatDuration(millis: Long): String {

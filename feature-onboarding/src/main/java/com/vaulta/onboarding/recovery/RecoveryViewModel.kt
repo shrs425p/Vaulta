@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vaulta.crypto.SecureMemory
 import com.vaulta.vault.VaultOperations
+import com.vaulta.vault.VaultPasswordPolicy
 import com.vaulta.vault.preferences.KeyFilePreferenceManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,8 +31,8 @@ class RecoveryViewModel @Inject constructor(
     val uiState: StateFlow<RecoveryUiState> = _uiState.asStateFlow()
 
     fun recoverVault(recoveryCode: String, keyFileUri: Uri, newPasswordChars: CharArray) {
-        if (newPasswordChars.size < 8) {
-            _uiState.value = RecoveryUiState.Error("New password must be at least 8 characters")
+        if (!VaultPasswordPolicy.accepts(newPasswordChars)) {
+            _uiState.value = RecoveryUiState.Error("New password must be between ${VaultPasswordPolicy.MIN_LENGTH} and ${VaultPasswordPolicy.MAX_LENGTH} characters")
             SecureMemory.wipe(newPasswordChars)
             return
         }

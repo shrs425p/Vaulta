@@ -55,6 +55,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.vaulta.vault.VaultPasswordPolicy
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -250,7 +251,7 @@ fun CreateVaultScreen(
                         OutlinedTextField(
                             value = password,
                             onValueChange = {
-                                password = it
+                                if (it.length <= VaultPasswordPolicy.MAX_LENGTH) password = it
                                 localError = null
                             },
                             label = { Text("Master Password") },
@@ -271,7 +272,7 @@ fun CreateVaultScreen(
                         OutlinedTextField(
                             value = confirmPassword,
                             onValueChange = {
-                                confirmPassword = it
+                                if (it.length <= VaultPasswordPolicy.MAX_LENGTH) confirmPassword = it
                                 localError = null
                             },
                             label = { Text("Confirm Master Password") },
@@ -307,8 +308,8 @@ fun CreateVaultScreen(
 
                         Button(
                             onClick = {
-                                if (password.length < 8) {
-                                    localError = "Password must be at least 8 characters"
+                                if (password.length !in VaultPasswordPolicy.MIN_LENGTH..VaultPasswordPolicy.MAX_LENGTH) {
+                                    localError = "Password must be between ${VaultPasswordPolicy.MIN_LENGTH} and ${VaultPasswordPolicy.MAX_LENGTH} characters"
                                     return@Button
                                 }
                                 if (password != confirmPassword) {

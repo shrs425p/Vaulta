@@ -15,7 +15,7 @@ Vaulta is committed to providing an open, welcoming, and harassment-free environ
 ### Prerequisites
 - JDK 17 (e.g. OpenJDK 17 or Eclipse Temurin)
 - Android Studio Ladybug (or command-line Android SDK)
-- Android SDK Platform 35 and Build-Tools 34.0.0+
+- Android SDK Platform 36 and Build-Tools 36.0.0+
 
 ### Development Setup
 1. Fork the repository on GitHub.

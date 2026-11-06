@@ -41,6 +41,7 @@ class VaultOperationsImpl @Inject constructor(
     private val mutex = Mutex()
 
     override suspend fun createVault(password: CharArray, keyFileUri: Uri): RecoveryResult = mutex.withLock {
+        requireNewPassword(password)
         val masterKey = keyDerivation.generateMasterKey()
         val salt = keyDerivation.generateSalt()
         val recoveryCode = recoveryCodeGenerator.generate()
@@ -109,36 +110,44 @@ class VaultOperationsImpl @Inject constructor(
         newPassword: CharArray,
         keyFileUri: Uri
     ) = mutex.withLock {
-        val keyFile = vaultKeyFileManager.readKeyFile(keyFileUri)
-        val currentWrappingKey = keyDerivation.deriveKey(currentPassword, keyFile.salt, keyFile.argon2Params)
-        val masterKey = try {
-            unwrapSlotWithFallback(
-                slotData = keyFile.wrappedMasterKeySlotA,
-                primaryWrappingKey = currentWrappingKey,
-                passwordOrCode = currentPassword,
-                salt = keyFile.salt,
-                params = keyFile.argon2Params
-            )
-        } finally {
-            SecureMemory.wipe(currentWrappingKey)
+        if (!VaultPasswordPolicy.accepts(newPassword)) {
             SecureMemory.wipe(currentPassword)
+            SecureMemory.wipe(newPassword)
+            throw IllegalArgumentException("New vault password must be between ${VaultPasswordPolicy.MIN_LENGTH} and ${VaultPasswordPolicy.MAX_LENGTH} characters")
         }
-
         try {
-            val newWrappingKey = keyDerivation.deriveKey(newPassword, keyFile.salt, keyFile.argon2Params)
-            val newSlotA = try {
-                keyWrapping.wrap(masterKey, newWrappingKey)
+            val keyFile = vaultKeyFileManager.readKeyFile(keyFileUri)
+            val currentWrappingKey = keyDerivation.deriveKey(currentPassword, keyFile.salt, keyFile.argon2Params)
+            val masterKey = try {
+                unwrapSlotWithFallback(
+                    slotData = keyFile.wrappedMasterKeySlotA,
+                    primaryWrappingKey = currentWrappingKey,
+                    passwordOrCode = currentPassword,
+                    salt = keyFile.salt,
+                    params = keyFile.argon2Params
+                )
             } finally {
-                SecureMemory.wipe(newWrappingKey)
-                SecureMemory.wipe(newPassword)
+                SecureMemory.wipe(currentWrappingKey)
             }
 
-            val updatedKeyFile = keyFile.copy(wrappedMasterKeySlotA = newSlotA)
-            vaultKeyFileManager.writeKeyFile(keyFileUri, updatedKeyFile)
-            encryptedIndex.loadIndex(masterKey)
-            vaultSession.unlock(masterKey)
+            try {
+                val newWrappingKey = keyDerivation.deriveKey(newPassword, keyFile.salt, keyFile.argon2Params)
+                val newSlotA = try {
+                    keyWrapping.wrap(masterKey, newWrappingKey)
+                } finally {
+                    SecureMemory.wipe(newWrappingKey)
+                }
+
+                val updatedKeyFile = keyFile.copy(wrappedMasterKeySlotA = newSlotA)
+                vaultKeyFileManager.writeKeyFile(keyFileUri, updatedKeyFile)
+                encryptedIndex.loadIndex(masterKey)
+                vaultSession.unlock(masterKey)
+            } finally {
+                SecureMemory.wipe(masterKey)
+            }
         } finally {
-            SecureMemory.wipe(masterKey)
+            SecureMemory.wipe(currentPassword)
+            SecureMemory.wipe(newPassword)
         }
     }
 
@@ -147,46 +156,50 @@ class VaultOperationsImpl @Inject constructor(
         keyFileUri: Uri,
         newPassword: CharArray
     ) = mutex.withLock {
-        val keyFile = vaultKeyFileManager.readKeyFile(keyFileUri)
-        val recoveryChars = recoveryCodeGenerator.toCharArray(recoveryCode)
-        val recoveryWrappingKey = try {
-            keyDerivation.deriveKey(recoveryChars, keyFile.salt, keyFile.argon2Params)
-        } finally {
-            SecureMemory.wipe(recoveryChars)
-        }
-
-        val masterKey = try {
-            val recChars = recoveryCodeGenerator.toCharArray(recoveryCode)
-            try {
-                unwrapSlotWithFallback(
-                    slotData = keyFile.wrappedMasterKeySlotB,
-                    primaryWrappingKey = recoveryWrappingKey,
-                    passwordOrCode = recChars,
-                    salt = keyFile.salt,
-                    params = keyFile.argon2Params
-                )
-            } finally {
-                SecureMemory.wipe(recChars)
-            }
-        } finally {
-            SecureMemory.wipe(recoveryWrappingKey)
-        }
-
+        requireNewPassword(newPassword)
         try {
-            val newWrappingKey = keyDerivation.deriveKey(newPassword, keyFile.salt, keyFile.argon2Params)
-            val newSlotA = try {
-                keyWrapping.wrap(masterKey, newWrappingKey)
+            val keyFile = vaultKeyFileManager.readKeyFile(keyFileUri)
+            val recoveryChars = recoveryCodeGenerator.toCharArray(recoveryCode)
+            val recoveryWrappingKey = try {
+                keyDerivation.deriveKey(recoveryChars, keyFile.salt, keyFile.argon2Params)
             } finally {
-                SecureMemory.wipe(newWrappingKey)
-                SecureMemory.wipe(newPassword)
+                SecureMemory.wipe(recoveryChars)
             }
 
-            val updatedKeyFile = keyFile.copy(wrappedMasterKeySlotA = newSlotA)
-            vaultKeyFileManager.writeKeyFile(keyFileUri, updatedKeyFile)
-            encryptedIndex.loadIndex(masterKey)
-            vaultSession.unlock(masterKey)
+            val masterKey = try {
+                val recChars = recoveryCodeGenerator.toCharArray(recoveryCode)
+                try {
+                    unwrapSlotWithFallback(
+                        slotData = keyFile.wrappedMasterKeySlotB,
+                        primaryWrappingKey = recoveryWrappingKey,
+                        passwordOrCode = recChars,
+                        salt = keyFile.salt,
+                        params = keyFile.argon2Params
+                    )
+                } finally {
+                    SecureMemory.wipe(recChars)
+                }
+            } finally {
+                SecureMemory.wipe(recoveryWrappingKey)
+            }
+
+            try {
+                val newWrappingKey = keyDerivation.deriveKey(newPassword, keyFile.salt, keyFile.argon2Params)
+                val newSlotA = try {
+                    keyWrapping.wrap(masterKey, newWrappingKey)
+                } finally {
+                    SecureMemory.wipe(newWrappingKey)
+                }
+
+                val updatedKeyFile = keyFile.copy(wrappedMasterKeySlotA = newSlotA)
+                vaultKeyFileManager.writeKeyFile(keyFileUri, updatedKeyFile)
+                encryptedIndex.loadIndex(masterKey)
+                vaultSession.unlock(masterKey)
+            } finally {
+                SecureMemory.wipe(masterKey)
+            }
         } finally {
-            SecureMemory.wipe(masterKey)
+            SecureMemory.wipe(newPassword)
         }
     }
 
@@ -215,6 +228,13 @@ class VaultOperationsImpl @Inject constructor(
             } else {
                 throw e
             }
+        }
+    }
+
+    private fun requireNewPassword(password: CharArray) {
+        if (!VaultPasswordPolicy.accepts(password)) {
+            SecureMemory.wipe(password)
+            throw IllegalArgumentException("Vault password must be between ${VaultPasswordPolicy.MIN_LENGTH} and ${VaultPasswordPolicy.MAX_LENGTH} characters")
         }
     }
 }

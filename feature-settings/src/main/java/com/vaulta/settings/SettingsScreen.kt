@@ -101,6 +101,7 @@ fun SettingsScreen(
 
     val context = LocalContext.current
     val isOffline = remember(context) { context.packageName.endsWith(".offline") }
+    val appVersionName = remember(context) { getInstalledAppVersionName(context) }
 
     val googleSignInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -262,7 +263,7 @@ fun SettingsScreen(
                         SettingsNavRow(
                             icon = Icons.Default.Info,
                             title = "About Vaulta",
-                            subtitle = "v1.0.0 • Cryptography architecture & system specs",
+                            subtitle = "v$appVersionName • Cryptography architecture & system specs",
                             onClick = onNavigateToAbout
                         )
                     }

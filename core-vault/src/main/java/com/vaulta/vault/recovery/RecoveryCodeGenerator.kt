@@ -56,7 +56,25 @@ class RecoveryCodeGeneratorImpl @Inject constructor() : RecoveryCodeGenerator {
     }
 
     override fun toCharArray(code: String): CharArray {
-        return code.replace(SEPARATOR, "").toCharArray()
+        require(code.length == RAW_CODE_LENGTH || code.length == FORMATTED_CODE_LENGTH) {
+            "Recovery code must contain exactly $RAW_CODE_LENGTH characters"
+        }
+        val raw = if (code.length == FORMATTED_CODE_LENGTH) {
+            buildString(RAW_CODE_LENGTH) {
+                code.forEachIndexed { index, char ->
+                    if (index % (GROUP_SIZE + 1) == GROUP_SIZE) {
+                        require(char == SEPARATOR[0]) { "Invalid recovery code format" }
+                    } else {
+                        require(char in ALLOWED_CHARS) { "Invalid recovery code character" }
+                        append(char)
+                    }
+                }
+            }
+        } else {
+            require(code.all { it in ALLOWED_CHARS }) { "Invalid recovery code character" }
+            code
+        }
+        return raw.toCharArray()
     }
 
     companion object {
@@ -65,6 +83,10 @@ class RecoveryCodeGeneratorImpl @Inject constructor() : RecoveryCodeGenerator {
 
         /** Number of characters per group. */
         const val GROUP_SIZE = 4
+
+        const val RAW_CODE_LENGTH = GROUP_COUNT * GROUP_SIZE
+
+        const val FORMATTED_CODE_LENGTH = RAW_CODE_LENGTH + GROUP_COUNT - 1
 
         /** Separator between groups. */
         const val SEPARATOR = "-"

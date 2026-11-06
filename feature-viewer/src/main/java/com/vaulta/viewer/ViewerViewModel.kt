@@ -137,6 +137,7 @@ class ViewerViewModel @Inject constructor(
         currentLoadedEntryId = entryId
         _uiState.value = ViewerUiState.Loading
         viewModelScope.launch(Dispatchers.IO) {
+            var fileKeyForWipe: ByteArray? = null
             try {
                 cleanupOldResources()
 
@@ -161,6 +162,7 @@ class ViewerViewModel @Inject constructor(
                 val fileKey = vaultSession.withMasterKey { masterKey ->
                     keyDerivation.deriveFileKey(masterKey, salt)
                 }
+                fileKeyForWipe = fileKey
 
                 val name = entry.name.lowercase()
                 val ext = name.substringAfterLast('.', "")
@@ -331,6 +333,8 @@ class ViewerViewModel @Inject constructor(
             } catch (e: Exception) {
                 Log.e("VaultaViewer", "File decryption failed")
                 _uiState.value = ViewerUiState.Error("Unable to decrypt this file.")
+            } finally {
+                fileKeyForWipe?.let(SecureMemory::wipe)
             }
 
         }

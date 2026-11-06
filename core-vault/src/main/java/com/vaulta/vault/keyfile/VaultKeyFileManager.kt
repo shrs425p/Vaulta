@@ -3,6 +3,8 @@ package com.vaulta.vault.keyfile
 import android.content.Context
 import android.net.Uri
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -43,7 +45,7 @@ class VaultKeyFileManagerImpl @Inject constructor(
 
     override fun readKeyFile(uri: Uri): VaultKeyFile {
         val bytes = context.contentResolver.openInputStream(uri)?.use { inputStream ->
-            inputStream.readBytes()
+            inputStream.readBoundedBytes(VaultKeyFileSerializer.MAX_SERIALIZED_SIZE)
         } ?: throw InvalidVaultKeyFileException("Could not open vault.key file at: $uri")
 
         return serializer.deserialize(bytes)
@@ -67,5 +69,26 @@ class VaultKeyFileManagerImpl @Inject constructor(
             os.write(bytes)
             os.flush()
         }
+    }
+}
+
+/** Read at most [maxBytes], rejecting an overlong document before it can exhaust app memory. */
+internal fun InputStream.readBoundedBytes(maxBytes: Int): ByteArray {
+    require(maxBytes > 0)
+    val output = ByteArrayOutputStream(minOf(maxBytes, 4096))
+    val buffer = ByteArray(4096)
+    try {
+        while (true) {
+            val remaining = maxBytes - output.size()
+            val count = read(buffer, 0, minOf(buffer.size, remaining + 1))
+            if (count < 0) break
+            if (count > remaining) {
+                throw InvalidVaultKeyFileException("vault.key file exceeds the maximum supported size")
+            }
+            output.write(buffer, 0, count)
+        }
+        return output.toByteArray()
+    } finally {
+        buffer.fill(0)
     }
 }

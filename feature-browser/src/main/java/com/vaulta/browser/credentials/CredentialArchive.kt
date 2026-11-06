@@ -31,41 +31,49 @@ class CredentialArchive @Inject constructor(
     }
 
     fun encrypt(credentials: List<VaultCredential>, password: CharArray): ByteArray {
-        require(password.size >= 12) { "Use an archive password with at least 12 characters" }
-        require(credentials.size <= MAX_CREDENTIALS) { "Too many credentials" }
-        val plaintext = serialize(credentials)
-        require(plaintext.size <= MAX_PLAINTEXT_BYTES) { "Archive is too large" }
-        val salt = keyDerivation.generateSalt()
+        var plaintext: ByteArray? = null
+        var salt: ByteArray? = null
         var key: ByteArray? = null
         return try {
-            key = keyDerivation.deriveKey(password, salt, PARAMS)
+            require(password.size >= 12) { "Use an archive password with at least 12 characters" }
+            require(credentials.size <= MAX_CREDENTIALS) { "Too many credentials" }
+            val serialized = serialize(credentials)
+            plaintext = serialized
+            require(serialized.size <= MAX_PLAINTEXT_BYTES) { "Archive is too large" }
+            val generatedSalt = keyDerivation.generateSalt()
+            salt = generatedSalt
+            val derivedKey = keyDerivation.deriveKey(password, generatedSalt, PARAMS)
+            key = derivedKey
             val output = Buffer()
-            output.write(MAGIC).write(salt)
-            encryption.encryptStream(Buffer().write(plaintext), output, key)
+            output.write(MAGIC).write(generatedSalt)
+            encryption.encryptStream(Buffer().write(serialized), output, derivedKey)
             output.readByteArray()
         } finally {
-            plaintext.fill(0)
-            salt.fill(0)
+            plaintext?.fill(0)
+            salt?.fill(0)
             key?.fill(0)
             password.fill('\u0000')
         }
     }
 
     fun decrypt(archive: ByteArray, password: CharArray): List<VaultCredential> {
-        require(archive.size in (MAGIC.size + 32 + 10)..MAX_ARCHIVE_BYTES) { "Invalid Vaulta password archive" }
-        val input = Buffer().write(archive)
-        val magic = input.readByteArray(MAGIC.size.toLong())
-        if (!MessageDigest.isEqual(magic, MAGIC)) throw IOException("This is not a Vaulta password archive")
-        val salt = input.readByteArray(32)
+        var salt: ByteArray? = null
         var key: ByteArray? = null
         val plaintext = Buffer()
         return try {
-            key = keyDerivation.deriveKey(password, salt, PARAMS)
-            encryption.decryptStream(input, plaintext, key)
-            if (plaintext.size > MAX_ARCHIVE_BYTES) throw IOException("Archive is too large")
+            require(archive.size in (MAGIC.size + 32 + 10)..MAX_ARCHIVE_BYTES) { "Invalid Vaulta password archive" }
+            val input = Buffer().write(archive)
+            val magic = input.readByteArray(MAGIC.size.toLong())
+            if (!MessageDigest.isEqual(magic, MAGIC)) throw IOException("This is not a Vaulta password archive")
+            val archiveSalt = input.readByteArray(32)
+            salt = archiveSalt
+            val derivedKey = keyDerivation.deriveKey(password, archiveSalt, PARAMS)
+            key = derivedKey
+            encryption.decryptStream(input, plaintext, derivedKey)
+            if (plaintext.size > MAX_PLAINTEXT_BYTES) throw IOException("Archive is too large")
             parse(plaintext.readByteArray())
         } finally {
-            salt.fill(0)
+            salt?.fill(0)
             key?.fill(0)
             password.fill('\u0000')
             val remaining = plaintext.readByteArray()

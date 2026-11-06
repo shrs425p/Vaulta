@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.vaulta.crypto"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 26
@@ -31,7 +31,7 @@ dependencies {
     implementation(libs.okio)
     implementation(libs.coroutines.core)
     implementation(libs.hilt.android)
-    implementation("com.lambdapioneer.argon2kt:argon2kt:1.6.0")
+    implementation(libs.argon2kt)
     ksp(libs.hilt.compiler)
 
     testImplementation(libs.junit)

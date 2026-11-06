@@ -1250,7 +1250,7 @@ private fun EntryListItem(
                                 onMove()
                             }
                         )
-                        if (viewModel.isSyncAvailable && !entry.isDirectory && entry.isAvailableLocally) {
+                        if (!entry.isDirectory && entry.isAvailableLocally) {
                             DropdownMenuItem(
                                 text = { Text("Export Decrypted") },
                                 onClick = {
@@ -1400,7 +1400,7 @@ private fun EntryGridItem(
                                 onMove()
                             }
                         )
-                        if (!entry.isDirectory) {
+                        if (!entry.isDirectory && entry.isAvailableLocally) {
                             DropdownMenuItem(
                                 text = { Text("Export Decrypted") },
                                 onClick = {

@@ -39,11 +39,13 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -54,6 +56,8 @@ fun AboutScreen(
     onNavigateBack: () -> Unit,
     viewModel: SettingsViewModel
 ) {
+    val context = LocalContext.current
+    val appVersionName = remember(context) { getInstalledAppVersionName(context) }
     val stats by viewModel.vaultStats.collectAsStateWithLifecycle()
     val isScreenProtectionEnabled by viewModel.isScreenProtectionEnabled.collectAsStateWithLifecycle()
 
@@ -135,7 +139,7 @@ fun AboutScreen(
                                 .padding(horizontal = 12.dp, vertical = 4.dp)
                         ) {
                             Text(
-                                text = "v1.0.0 (Release 2026.11)",
+                                text = "v$appVersionName",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary

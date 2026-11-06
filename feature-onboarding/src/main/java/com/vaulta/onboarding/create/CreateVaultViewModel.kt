@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vaulta.crypto.SecureMemory
 import com.vaulta.vault.VaultOperations
+import com.vaulta.vault.VaultPasswordPolicy
 import com.vaulta.vault.preferences.KeyFilePreferenceManager
 import com.vaulta.vault.clipboard.ClipboardAutoPurgeManager
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -36,8 +37,8 @@ class CreateVaultViewModel @Inject constructor(
     }
 
     fun createVault(passwordChars: CharArray, keyFileUri: Uri) {
-        if (passwordChars.size < 8) {
-            _uiState.value = CreateVaultUiState.Error("Password must be at least 8 characters long")
+        if (!VaultPasswordPolicy.accepts(passwordChars)) {
+            _uiState.value = CreateVaultUiState.Error("Password must be between ${VaultPasswordPolicy.MIN_LENGTH} and ${VaultPasswordPolicy.MAX_LENGTH} characters long")
             SecureMemory.wipe(passwordChars)
             return
         }

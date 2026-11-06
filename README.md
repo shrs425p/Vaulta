@@ -1,187 +1,92 @@
-# Vaulta: Air-Gapped Zero-Knowledge Android Vault
-
 <div align="center">
-  <img src="docs/vaulta-banner.png" alt="Vaulta Banner" width="100%">
-  
-  <br>
+  <img src="docs/vaulta-banner.png" alt="Vaulta — Android vault for files, passwords, and two-factor codes" width="100%" />
 
-  <h3>Vaulta is an open-source, local-first Android vault for encrypted files, passwords, and 2FA with memory-only previews for supported file types and an offline edition.</h3>
+  <p>Encrypted file storage, password management, and two-factor codes for Android.</p>
 
   <p>
-    <a href="https://vaultaaa.web.app">Official Website</a> &bull; 
-    <a href="https://vaultaaa.web.app/download">Downloads Hub</a> &bull; 
-    <a href="https://github.com/shrs425p/Vaulta/discussions">Discussions</a>
+    <a href="https://github.com/shrs425p/Vaulta/releases/latest">Downloads</a> ·
+    <a href="https://vaultaaa.web.app">Website</a> ·
+    <a href="https://github.com/shrs425p/Vaulta/issues">Issues</a> ·
+    <a href="https://github.com/shrs425p/Vaulta/security/advisories">Security</a>
   </p>
 
   <p>
-    <a href="https://github.com/shrs425p/Vaulta/releases/latest"><img src="https://img.shields.io/github/v/release/shrs425p/Vaulta?label=Release&color=24634d" alt="Release"></a>
-    <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License"></a>
-    <a href="https://developer.android.com"><img src="https://img.shields.io/badge/Android-8.0%2B%20(API%2026%2B)-brightgreen.svg" alt="Android"></a>
-    <a href="https://vaultaaa.web.app"><img src="https://img.shields.io/badge/Website-vaultaaa.web.app-17231e.svg" alt="Website"></a>
+    <img src="https://img.shields.io/github/v/release/shrs425p/Vaulta?label=release" alt="Latest release" />
+    <img src="https://img.shields.io/badge/Android-API%2026%2B-3A8F7A" alt="Android API 26 and later" />
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-3A8F7A" alt="Apache 2.0 license" /></a>
   </p>
 </div>
 
+## Choose an edition
+
+| | Offline | Cloud |
+|---|---|---|
+| **Use** | Local vault without app network access | Google Drive sync |
+| **Package ID** | `com.vaulta.shrs.offline` | `com.vaulta.shrs` |
+| **Download** | [Offline APK](https://github.com/shrs425p/Vaulta/releases/latest/download/app-offline-release.apk) | [Cloud APK](https://github.com/shrs425p/Vaulta/releases/latest/download/app-cloud-release.apk) |
+
+The Offline APK omits Android's `INTERNET` and `ACCESS_NETWORK_STATE` permissions and the Cloud sync module. This limits Vaulta's own network access; Android, other apps, and document providers remain outside that boundary.
+
+The Cloud edition encrypts file and index payloads before upload. Google and network providers can still observe account identity, requests, timing, approximate sizes, and storage metadata. Local-only items are not synchronized.
+
+## Features
+
+- Encrypted file vault and password manager
+- TOTP/HOTP two-factor codes
+- Vault recovery with a portable `vault.key` and recovery code
+- Optional strong-biometric unlock through Android Keystore; StrongBox is used when available
+- Auto-lock and clipboard-clearing settings
+- In-app previews for supported images, text, tables, audio, and video
+- Optional Google Drive sync in the separate Cloud edition
+
+<details>
+<summary>Screenshots</summary>
+
 <p align="center">
-  <img src="docs/screenshots/screen_home.jpg" width="22%" alt="Vaulta Home Screen" />
-  <img src="docs/screenshots/screen_totp.jpg" width="22%" alt="2FA Authenticator" />
-  <img src="docs/screenshots/screen_passwords.jpg" width="22%" alt="Password Manager" />
-  <img src="docs/screenshots/screen_settings.jpg" width="22%" alt="Settings and Export" />
+  <img src="docs/screenshots/screen_home.jpg" width="23%" alt="Vaulta home screen" />
+  <img src="docs/screenshots/screen_totp.jpg" width="23%" alt="Two-factor authenticator" />
+  <img src="docs/screenshots/screen_passwords.jpg" width="23%" alt="Password manager" />
+  <img src="docs/screenshots/screen_settings.jpg" width="23%" alt="Vaulta settings" />
 </p>
 
----
+</details>
 
-## Why Vaulta?
+## Security and data
 
-Vaulta solves a specific problem that existing security tools leave fragmented across separate applications:
+Vaulta uses Argon2id for password-based key derivation, AES-256-GCM for authenticated encryption, and HKDF-SHA256 for per-file keys. File data is encrypted in authenticated chunks. Android vault operations fail closed if the native Argon2id implementation cannot load.
 
-- **Bitwarden & Proton Pass:**
-  Strong general-purpose password managers, but designed primarily around cloud infrastructure with active internet permissions, network syncing dependencies, and remote accounts. Vaulta's offline edition omits the network stack entirely at the Android OS manifest layer.
+The local MobSF static scans of the 1.1.0 APKs reported no high-severity findings. Scanner scores are heuristic; this is not an independent security audit or certification. Full dynamic analysis and independent review remain outstanding. Read the [security review notes](SECURITY_AUDIT.md) and [community review request](https://github.com/shrs425p/Vaulta/issues/4).
 
-- **KeePassDX:**
-  A capable offline credential manager, but restricted strictly to .kdbx password databases. It requires external file-provider sync plugins or manual file-picker workflows and does not offer an integrated RFC 6238 2FA authenticator or media streaming.
+A `vault.key` file alone is not a complete file-vault backup. See [Backup and recovery](docs/BACKUP_AND_RECOVERY.md) before moving devices or clearing app data.
 
-- **Aegis Authenticator:**
-  An excellent offline 2FA app, but focused exclusively on one-time code tokens. It does not store encrypted documents, photos, notes, or credentials.
+Report suspected vulnerabilities through [GitHub Security Advisories](https://github.com/shrs425p/Vaulta/security/advisories/new). Please avoid posting exploit details in public issues.
 
-- **Vaulta's Architectural Differences:**
-  - **Air-Gapped Offline Build:** The offline edition declares no `android.permission.INTERNET`. The Android OS prevents the process from creating network sockets.
-  - **Memory-Only Previews:** Images, text, tables, and documents decrypt into memory. Video and audio use authenticated encrypted-chunk streaming without a plaintext cache. PDF, binary, external-app, print, and decrypted-export paths remain disabled.
-  - **Unified Security Boundary:** 2FA TOTP/HOTP codes, password credentials, sensitive notes, and encrypted files live within a single Argon2id + AES-256-GCM hardware-backed vault.
-  - **Explicit Privacy Boundary:** The app does not silently export decrypted content or hand it to other applications.
+## Cloud compatibility
 
----
+Vaulta 1.1.0 writes encrypted file-stream format 3, which 1.0.0 clients cannot read. Update all Cloud devices before syncing files written by 1.1.0 between them.
 
-## Security Audit Status
+## Build from source
 
-Vaulta is in active open-source development and has not yet undergone an independent third-party security audit. The complete source code, threat model, and cryptographic implementation are open for peer review and reproducible verification.
+Requirements: JDK 17 or later, Android SDK Platform 36, and Build Tools 36.0.0 or later.
 
-If you identify a security defect, please disclose it responsibly via [GitHub Security Advisories](https://github.com/shrs425p/Vaulta/security/advisories).
-
----
-
-## Downloads
-
-Vaulta is released in two distinct editions to match your personal operational security requirements. Both editions share the exact same cryptographic core:
-
-- **Offline Edition (Air-Gapped):**
-  - Package: `com.vaulta.shrs.offline`
-  - Completely omits `android.permission.INTERNET`.
-  - No Coil/OkHttp image-network stack is included in the offline runtime dependency graph.
-  - [Download Offline APK](https://github.com/shrs425p/Vaulta/releases/latest/download/app-offline-release.apk) (5.08 MB)
-
-- **Online Edition (Google Drive Sync):**
-  - Package: `com.vaulta.shrs`
-  - Direct client-to-Google-Drive encrypted synchronization with zero intermediate servers.
-  - Pre-encrypts all data locally before transmission (Google only receives ciphertext blobs).
-  - Supports Stealth Mode (`appDataFolder`) and an itemized Cloud Storage Inspector.
-  - [Download Online APK](https://github.com/shrs425p/Vaulta/releases/latest/download/app-cloud-release.apk) (6.11 MB)
-
-### One-Command Sideload (via ADB)
 ```bash
-adb install -r app-offline-release.apk
+git clone https://github.com/shrs425p/Vaulta.git
+cd Vaulta
+./gradlew --no-daemon test lintOfflineRelease lintCloudRelease assembleOfflineRelease assembleCloudRelease
 ```
 
----
+The APKs are written under `app/build/outputs/apk/offline/release/` and `app/build/outputs/apk/cloud/release/`.
 
-## Key Capabilities
-
-- **Memory-only previews:**
-  Images, text, table, and document previews use memory buffers. Video and audio use authenticated encrypted-chunk streaming without writing a complete plaintext file to storage. PDF, binary preview, export, printing, and external-app hand-off remain disabled.
-
-- **Encrypted Password Manager:**
-  Client-side credential store with zxcvbn entropy strength estimation, automatic clipboard purges after 30 seconds, and Diceware passphrase generation.
-
-- **Integrated 2FA Authenticator:**
-  RFC 6238 TOTP engine supporting 6-digit and 8-digit codes with visual countdown rings and encrypted URI exports.
-
-- **Hardware Root of Trust:**
-  Biometric unlock keys backed by Android Keystore (TEE / StrongBox). Screen surveillance protection enforced via `FLAG_SECURE`.
-
-- **Export boundary:**
-  Decrypted export, printing, and external-app sharing are intentionally disabled to preserve the plaintext-in-memory security boundary.
-
-- **Disaster Recovery via portable `vault.key`:**
-  Encrypted salt and parameter container file allows full vault migration across phones without third-party servers.
-
----
-
-## Cryptographic Architecture
-
-```
-[User Passphrase] + [vault.key (Salt & KDF Parameters)]
-                       │
-                       ▼
-            Argon2id Key Derivation
-       (Memory: 64 MB, Iterations: 3, Threads: 4)
-                       │
-                       ▼
-               [Master Key (256-bit)]
-                       │
-       ┌───────────────┼───────────────┐
-       ▼               ▼               ▼
- AES-256-GCM      AES-256-GCM      Android Keystore
- Media Stream      Room Database     (TEE / StrongBox)
- (64 KB Chunks)   (Credentials)    (Hardware Master Key)
-```
-
-### Specifications
-- **Key Derivation Function:** Argon2id (m=65536 KB, t=3, p=4) with PBKDF2 fallback on unsupported platforms.
-- **Symmetric Cipher:** AES-256 in Galois/Counter Mode (GCM) with 128-bit authentication tag.
-- **Chunk Size:** 64 KB per authenticated chunk with monotonic index counters to guard against reordering attacks.
-- **Biometric Enclave:** Android Keystore with Hardware-backed StrongBox / TEE validation.
-
----
-
-## Release Signing & Integrity Verification
-
-Official releases are signed with a 4096-bit RSA release key. You can independently verify the cryptographic authenticity of any downloaded APK using Android's official `apksigner` tool:
+Verify a downloaded APK's signature with Android's `apksigner`:
 
 ```bash
 apksigner verify --print-certs app-offline-release.apk
 ```
 
-Expected Output:
+The release certificate SHA-256 fingerprint is:
+
 ```text
-Signer #1 certificate DN: CN=Vaulta Lead Developer, OU=Vaulta Security, O=Vaulta, L=Mumbai, ST=Maharashtra, C=IN
-Signer #1 certificate SHA-256 digest: a51b31b9fa153c0a102acf49615af4666b6bf0cbc79175d329fb08db35ded269
-Signer #1 certificate SHA-1 digest: f422277bd1ab457e24b38073c7bb57a0f9ba10f2
+a51b31b9fa153c0a102acf49615af4666b6bf0cbc79175d329fb08db35ded269
 ```
 
----
-
-## Building from Source
-
-### Prerequisites
-- JDK 17+
-- Android SDK (API 35, Build-Tools 34.0.0+)
-
-### Build Commands
-```bash
-# Clone the repository
-git clone https://github.com/shrs425p/Vaulta.git
-cd Vaulta
-
-# Run unit and cryptographic tests
-./gradlew test
-
-# Build offline debug APK
-./gradlew assembleOfflineDebug
-
-# Build cloud debug APK
-./gradlew assembleCloudDebug
-```
-
-Compiled APKs will be located at:
-`app/build/outputs/apk/<edition>/debug/`
-
----
-
-## Contributing
-
-Contributions, bug reports, and code audits are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on code standards, local testing, and submission guidelines.
-
----
-
-## License
-
-Vaulta is licensed under the [Apache License, Version 2.0](LICENSE).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance. Vaulta is licensed under the [Apache License 2.0](LICENSE).
