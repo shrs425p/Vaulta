@@ -1,13 +1,13 @@
 # Vaulta Release and Dependency Catalog
 
-This file records the published 1.0.0 baseline, the changes prepared for Vaulta 1.1.0, and the resolved third-party runtime dependencies for both Android editions.
+This file records the published 1.0.0 and 1.1.0 releases, the changes between them, and the resolved third-party runtime dependencies for both Android editions.
 
 ## Release history
 
 | Version | Date | Status | Version code | Android target | Source reference |
 |---|---|---|---:|---:|---|
 | 1.0.0 | November 5, 2026 | First published release | 1 | API 35 | Git tag `v1.0.0` (`9fda59c`) |
-| 1.1.0 | November 6, 2026 | Build verified | 2 | API 36 | Release branch `vaulta/release-v1.1.0`; planned tag `v1.1.0` |
+| 1.1.0 | November 6, 2026 | Published release | 2 | API 36 | Git tag `v1.1.0` (`12ee176`) |
 
 Version 1.1.0 retains the Cloud and Offline application IDs and minimum API level from 1.0.0. The app keeps the same IDs: Cloud `com.vaulta.shrs` and Offline `com.vaulta.shrs.offline`. Both retain minimum API 26.
 
@@ -119,7 +119,7 @@ At that baseline, Cloud's flavor manifest declared Internet and network-state pe
 
 ## Shared release details
 
-Both editions share the encrypted vault, credential manager and protected Vaulta credential archive, clipboard handling, biometrics, auto-lock, and in-app previews. Both are built with JDK 17, Gradle 8.13, AGP 8.13.2, SDK 36, and Build Tools 36.0.0. The version 1.1.0 release build was verified locally.
+Both editions share the encrypted vault, credential manager and protected Vaulta credential archive, clipboard handling, biometrics, auto-lock, and in-app previews. Both are built with JDK 17, Gradle 8.13, AGP 8.13.2, SDK 36, and Build Tools 36.0.0. Version 1.1.0 is published.
 
 ## Edition, security, and recovery guides
 
