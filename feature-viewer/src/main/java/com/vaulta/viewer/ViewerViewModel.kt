@@ -11,9 +11,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vaulta.crypto.KeyDerivation
 import com.vaulta.crypto.SecureMemory
+import com.vaulta.crypto.StreamingEncryption
 import com.vaulta.storage.blob.BlobStore
 import com.vaulta.storage.index.EncryptedIndex
 import com.vaulta.storage.index.VaultEntry
+import com.vaulta.vault.clipboard.ClipboardAutoPurgeManager
 import com.vaulta.vault.session.VaultSession
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -37,18 +39,23 @@ sealed interface ViewerUiState {
     
     data class VideoReady(
         val entry: VaultEntry,
-        val videoFile: File
+        val dataSourceFactory: EncryptedMediaDataSource.Factory,
     ) : ViewerUiState
-    
+
     data class AudioReady(
         val entry: VaultEntry,
-        val audioFile: File
+        val dataSourceFactory: EncryptedMediaDataSource.Factory
     ) : ViewerUiState
-    
+
     data class PdfReady(
         val entry: VaultEntry,
         val pdfFile: File,
         val pageCount: Int
+    ) : ViewerUiState
+
+    data class BinaryReady(
+        val entry: VaultEntry,
+        val file: File
     ) : ViewerUiState
 
     data class CsvReady(
@@ -73,11 +80,6 @@ sealed interface ViewerUiState {
         val docxDoc: DocxDocument? = null
     ) : ViewerUiState
     
-    data class BinaryReady(
-        val entry: VaultEntry,
-        val file: File
-    ) : ViewerUiState
-    
     data class Error(val message: String) : ViewerUiState
 }
 
@@ -87,6 +89,8 @@ class ViewerViewModel @Inject constructor(
     private val encryptedIndex: EncryptedIndex,
     private val blobStore: BlobStore,
     private val keyDerivation: KeyDerivation,
+    private val streamingEncryption: StreamingEncryption,
+    private val clipboardAutoPurgeManager: ClipboardAutoPurgeManager,
     private val syncProvider: com.vaulta.vault.sync.SyncProvider,
     private val vaultSession: VaultSession
 ) : ViewModel() {
@@ -94,10 +98,14 @@ class ViewerViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<ViewerUiState>(ViewerUiState.Loading)
     val uiState: StateFlow<ViewerUiState> = _uiState.asStateFlow()
 
+    fun copySensitiveText(label: String, text: String) {
+        clipboardAutoPurgeManager.copySensitiveText(label, text)
+    }
+
     private var currentLoadedEntryId: String? = null
     private var decryptedBytes: ByteArray? = null
     private var currentLoadedBitmap: Bitmap? = null
-    private val tempFiles = mutableListOf<File>()
+    private var currentMediaFactory: EncryptedMediaDataSource.Factory? = null
     private var pdfRenderer: PdfRenderer? = null
     private var pdfFileDescriptor: ParcelFileDescriptor? = null
 
@@ -122,7 +130,7 @@ class ViewerViewModel @Inject constructor(
 
     fun loadFile(entryId: String, forceReload: Boolean = false) {
         if (!forceReload && currentLoadedEntryId == entryId && _uiState.value !is ViewerUiState.Error && _uiState.value !is ViewerUiState.Loading) {
-            Log.d("VaultaViewer", "File '$entryId' is already loaded and ready in memory/disk. Skipping redundant decryption.")
+            Log.d("VaultaViewer", "File is already loaded; skipping redundant decryption")
             return
         }
 
@@ -136,7 +144,7 @@ class ViewerViewModel @Inject constructor(
                     ?: throw IllegalArgumentException("File entry not found in index")
 
                 if (!entry.isAvailableLocally) {
-                    Log.d("VaultaViewer", "File '${entry.name}' is cloud-only. Downloading blob on-demand...")
+                    Log.d("VaultaViewer", "Downloading cloud-only file on demand")
                     val downloadRes = syncProvider.downloadSpecificBlob(entry.id)
                     if (downloadRes.isFailure) {
                         val msg = downloadRes.exceptionOrNull()?.message ?: "Failed downloading cloud blob"
@@ -159,8 +167,6 @@ class ViewerViewModel @Inject constructor(
                 val mime = (entry.mimeType?.takeIf { it.isNotBlank() && it != "application/octet-stream" }
                     ?: MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)).orEmpty().lowercase()
 
-                Log.d("VaultaViewer", "Loading file: '${entry.name}', size: ${entry.sizeBytes} bytes, ext: '$ext', mime: '$mime'")
-
                 val isMediaStreaming = mime.startsWith("video/") || 
                     mime.startsWith("audio/") || 
                     mime == "application/pdf" || 
@@ -181,44 +187,29 @@ class ViewerViewModel @Inject constructor(
                 }
 
                 when {
-                    // Videos -> Stream decrypt directly to disk (ZERO heap overhead, prevents OOM)
                     mime.startsWith("video/") || ext in setOf("mp4", "mkv", "webm", "avi", "mov", "3gp", "m4v", "ts") -> {
-                        val videoFile = createSecureTempFile("vid_${entry.id}_${entry.name}")
-                        try {
-                            blobStore.decryptBlobToFile(blobName, videoFile, fileKey)
-                        } finally {
-                            SecureMemory.wipe(fileKey)
-                        }
-                        Log.d("VaultaViewer", "Video streamed to temp file: ${videoFile.length()} bytes")
-                        _uiState.value = ViewerUiState.VideoReady(entry, videoFile)
+                        currentMediaFactory = EncryptedMediaDataSource.Factory(
+                            encryptedFile = blobStore.getBlobFile(blobName),
+                            streamingEncryption = streamingEncryption,
+                            fileKey = fileKey,
+                            contentLength = entry.sizeBytes
+                        )
+                        _uiState.value = ViewerUiState.VideoReady(entry, currentMediaFactory!!)
                     }
 
-                    // Audio -> Stream decrypt directly to disk
                     mime.startsWith("audio/") || ext in setOf("mp3", "wav", "m4a", "aac", "flac", "ogg", "opus", "wma", "mid") -> {
-                        val audioFile = createSecureTempFile("aud_${entry.id}_${entry.name}")
-                        try {
-                            blobStore.decryptBlobToFile(blobName, audioFile, fileKey)
-                        } finally {
-                            SecureMemory.wipe(fileKey)
-                        }
-                        Log.d("VaultaViewer", "Audio streamed to temp file: ${audioFile.length()} bytes")
-                        _uiState.value = ViewerUiState.AudioReady(entry, audioFile)
+                        currentMediaFactory = EncryptedMediaDataSource.Factory(
+                            encryptedFile = blobStore.getBlobFile(blobName),
+                            streamingEncryption = streamingEncryption,
+                            fileKey = fileKey,
+                            contentLength = entry.sizeBytes
+                        )
+                        _uiState.value = ViewerUiState.AudioReady(entry, currentMediaFactory!!)
                     }
 
-                    // PDF Documents -> Stream decrypt directly to disk
                     mime == "application/pdf" || ext == "pdf" -> {
-                        val pdfFile = createSecureTempFile("pdf_${entry.id}.pdf")
-                        try {
-                            blobStore.decryptBlobToFile(blobName, pdfFile, fileKey)
-                        } finally {
-                            SecureMemory.wipe(fileKey)
-                        }
-                        val pfd = ParcelFileDescriptor.open(pdfFile, ParcelFileDescriptor.MODE_READ_ONLY)
-                        pdfFileDescriptor = pfd
-                        val renderer = PdfRenderer(pfd)
-                        pdfRenderer = renderer
-                        Log.d("VaultaViewer", "PDF streamed to temp file: ${renderer.pageCount} pages")
-                        _uiState.value = ViewerUiState.PdfReady(entry, pdfFile, renderer.pageCount)
+                        SecureMemory.wipe(fileKey)
+                        _uiState.value = ViewerUiState.Error("PDF preview is disabled because Android's renderer requires a plaintext file.")
                     }
 
                     // Images (photos, screenshots, logos) -> Stream decrypt directly to RAM (never touches flash storage)
@@ -333,19 +324,15 @@ class ViewerViewModel @Inject constructor(
 
                     // Other / Binary files
                     else -> {
-                        val tempFile = createSecureTempFile("bin_${entry.id}_${entry.name}")
-                        try {
-                            blobStore.decryptBlobToFile(blobName, tempFile, fileKey)
-                        } finally {
-                            SecureMemory.wipe(fileKey)
-                        }
-                        _uiState.value = ViewerUiState.BinaryReady(entry, tempFile)
+                        SecureMemory.wipe(fileKey)
+                        _uiState.value = ViewerUiState.Error("Binary preview is disabled because it would require a plaintext file.")
                     }
                 }
             } catch (e: Exception) {
-                Log.e("VaultaViewer", "Failed to load/decrypt file $entryId", e)
-                _uiState.value = ViewerUiState.Error("Decryption error: ${e.message}")
+                Log.e("VaultaViewer", "File decryption failed")
+                _uiState.value = ViewerUiState.Error("Unable to decrypt this file.")
             }
+
         }
     }
 
@@ -416,15 +403,6 @@ class ViewerViewModel @Inject constructor(
         return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, decodeOptions)
     }
 
-    private fun createSecureTempFile(name: String): File {
-        val cacheSubdir = File(context.cacheDir, "viewer_temp").apply { mkdirs() }
-        val file = File(cacheSubdir, name)
-        if (file.exists()) file.delete()
-        file.deleteOnExit()
-        tempFiles.add(file)
-        return file
-    }
-
     fun cleanup() {
         cleanupOldResources()
         _uiState.value = ViewerUiState.Loading
@@ -438,6 +416,9 @@ class ViewerViewModel @Inject constructor(
             }
         }
         currentLoadedBitmap = null
+
+        currentMediaFactory?.close()
+        currentMediaFactory = null
 
         (_uiState.value as? ViewerUiState.ImageReady)?.bitmap?.let { bmp ->
             if (!bmp.isRecycled) bmp.recycle()
@@ -453,30 +434,6 @@ class ViewerViewModel @Inject constructor(
         try {
             pdfPageCache.evictAll()
         } catch (_: Exception) {}
-
-        for (file in tempFiles) {
-            try {
-                if (file.exists()) {
-                    var remaining = file.length()
-                    if (remaining > 0) {
-                        val zeroBuffer = ByteArray(64 * 1024)
-                        java.io.RandomAccessFile(file, "rws").use { raf ->
-                            raf.seek(0)
-                            while (remaining > 0) {
-                                val writeSize = minOf(remaining, zeroBuffer.size.toLong()).toInt()
-                                raf.write(zeroBuffer, 0, writeSize)
-                                remaining -= writeSize
-                            }
-                            raf.fd.sync()
-                        }
-                    }
-                    file.delete()
-                }
-            } catch (_: Exception) {
-                try { file.delete() } catch (_: Exception) {}
-            }
-        }
-        tempFiles.clear()
 
         decryptedBytes?.let {
             SecureMemory.wipe(it)

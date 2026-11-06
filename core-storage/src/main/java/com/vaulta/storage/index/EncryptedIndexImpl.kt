@@ -4,6 +4,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.util.Log
 import com.vaulta.crypto.KeyWrapping
+import com.vaulta.crypto.SecureMemory
 import com.vaulta.storage.credentials.CredentialCategory
 import com.vaulta.storage.credentials.CredentialEntity
 import com.vaulta.storage.credentials.CredentialTemplate
@@ -66,7 +67,7 @@ class EncryptedIndexImpl @Inject constructor(
                     deleteLegacyDatabase()
                 } catch (e: Exception) {
                     if (targetFile != tempFile && tempFile.exists() && tempFile.length() > 0) {
-                        Log.w(TAG, "Corrupted indexFile. Attempting recovery from vault_index.enc.tmp", e)
+                        Log.w(TAG, "Corrupted encrypted index; attempting recovery")
                         try {
                             val tmpBytes = tempFile.readBytes()
                             loadFromEncryptedData(tmpBytes, masterKey)
@@ -75,10 +76,10 @@ class EncryptedIndexImpl @Inject constructor(
                             deleteLegacyDatabase()
                             return@withContext
                         } catch (e2: Exception) {
-                            Log.e(TAG, "Recovery from vault_index.enc.tmp also failed", e2)
+                            Log.e(TAG, "Encrypted index recovery failed")
                         }
                     }
-                    Log.e(TAG, "Failed to load encrypted index from disk", e)
+                    Log.e(TAG, "Failed to load encrypted index from disk")
                     throw e
                 }
             } else {
@@ -91,7 +92,7 @@ class EncryptedIndexImpl @Inject constructor(
                         deleteLegacyDatabase()
                         Log.i(TAG, "Migration complete. Legacy plaintext database shredded and deleted.")
                     } catch (e: Exception) {
-                        Log.e(TAG, "Legacy database migration failed", e)
+                        Log.e(TAG, "Legacy database migration failed")
                     }
                 } else {
                     Log.d(TAG, "No existing vault_index.enc or legacy database found.")
@@ -228,10 +229,11 @@ class EncryptedIndexImpl @Inject constructor(
         if (encryptedBytes.isEmpty()) return Pair(emptyList(), emptyList())
 
         val decryptedBytes = keyWrapping.unwrap(encryptedBytes, masterKey)
-        val dis = DataInputStream(ByteArrayInputStream(decryptedBytes))
+        try {
+            val dis = DataInputStream(ByteArrayInputStream(decryptedBytes))
 
-        val entries = mutableListOf<VaultEntry>()
-        val credentials = mutableListOf<VaultCredential>()
+            val entries = mutableListOf<VaultEntry>()
+            val credentials = mutableListOf<VaultCredential>()
 
         val firstInt = dis.readInt()
         val isVersion4 = (firstInt == VERSION_4_MAGIC)
@@ -386,7 +388,10 @@ class EncryptedIndexImpl @Inject constructor(
         } catch (_: Exception) {}
         }
 
-        return Pair(entries, credentials)
+            return Pair(entries, credentials)
+        } finally {
+            SecureMemory.wipe(decryptedBytes)
+        }
     }
 
     override suspend fun exportToEncryptedData(masterKey: ByteArray): ByteArray {
@@ -500,9 +505,8 @@ class EncryptedIndexImpl @Inject constructor(
             database?.credentialDao()?.deleteAll()
             try {
                 database?.clearAllTables()
-                database?.invalidationTracker?.refreshVersionsSync()
             } catch (e: Exception) {
-                Log.w(TAG, "Failed to fully clear in-memory database tables", e)
+                Log.w(TAG, "Failed to fully clear in-memory database tables")
             }
         }
     }

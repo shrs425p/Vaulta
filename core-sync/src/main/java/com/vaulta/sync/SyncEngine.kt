@@ -66,7 +66,7 @@ class SyncEngine @Inject constructor(
                     try {
                         encryptedIndex.parseFromEncryptedData(remoteIndexBytes!!, masterKey)
                     } catch (e: Exception) {
-                        Log.e(TAG, "Failed decrypting remote index with active master key. Aborting sync immediately to prevent data loss.", e)
+                        Log.e(TAG, "Failed decrypting remote index; sync aborted")
                         throw IllegalStateException("Failed decrypting remote index: ${e.message}", e)
                     }
                 } else {
@@ -240,7 +240,7 @@ class SyncEngine @Inject constructor(
 
             Result.success(Unit)
         } catch (e: Exception) {
-            Log.e(TAG, "Bi-directional sync failed: ${e.message}", e)
+            Log.e(TAG, "Bi-directional sync failed")
             Result.failure(e)
         }
     }
@@ -270,8 +270,15 @@ class SyncEngine @Inject constructor(
         val domain = entity.toDomain()
         val bName = domain.blobName
 
-        if (!bName.isNullOrBlank() && driveClient.isSignedIn()) {
-            driveClient.deleteBlob(bName)
+        if (bName.isNullOrBlank()) {
+            return@withContext Result.failure(IllegalStateException("Entry has no cloud blob to remove."))
+        }
+        if (!driveClient.isSignedIn()) {
+            return@withContext Result.failure(IllegalStateException("Google Drive account is not signed in."))
+        }
+        if (!driveClient.deleteBlob(bName)) {
+            val error = driveClient.getLastError() ?: "Failed removing encrypted blob from Google Drive."
+            return@withContext Result.failure(IllegalStateException(error))
         }
         vaultEntryDao.updateEntry(entity.copy(syncPolicy = SyncPolicy.LOCAL_ONLY.name))
         vaultSession.withMasterKey { masterKey ->

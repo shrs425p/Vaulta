@@ -39,6 +39,7 @@ fun WelcomeScreen(
     onCreateVaultClick: () -> Unit,
     onUnlockVaultClick: () -> Unit,
     onRecoveryClick: () -> Unit,
+    isOfflineEdition: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -81,7 +82,11 @@ fun WelcomeScreen(
             Spacer(modifier = Modifier.height(10.dp))
 
             Text(
-                text = "Zero-knowledge encrypted storage.\nYour files remain entirely encrypted on your device and in the cloud.",
+                text = if (isOfflineEdition) {
+                    "Zero-knowledge encrypted storage.\nYour files stay encrypted on this device. The offline edition never connects to cloud storage."
+                } else {
+                    "Zero-knowledge encrypted storage.\nYour files remain entirely encrypted on your device and in the cloud."
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 textAlign = TextAlign.Center,
                 lineHeight = 22.sp,

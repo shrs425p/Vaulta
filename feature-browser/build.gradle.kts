@@ -56,5 +56,6 @@ dependencies {
     testImplementation(libs.truth)
     testImplementation(libs.mockk)
     testImplementation(libs.coroutines.test)
+    testImplementation("org.json:json:20240303")
     debugImplementation(libs.compose.ui.tooling)
 }

@@ -207,52 +207,54 @@ fun SecuritySettingsScreen(
                             )
                         }
                     )
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
-                    ListItem(
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                        leadingContent = {
-                            Box(
-                                modifier = Modifier
-                                    .size(42.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(MaterialTheme.colorScheme.primaryContainer),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.CloudSync,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                            }
-                        },
-                        headlineContent = {
-                            Text("Default Cloud Sync Policy", fontWeight = FontWeight.SemiBold)
-                        },
-                        supportingContent = {
-                            Text(
-                                text = defaultSyncPolicy.description,
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        },
-                        trailingContent = {
-                            TextButton(
-                                onClick = {
-                                    val newPolicy = if (defaultSyncPolicy == com.vaulta.vault.preferences.DefaultSyncPolicy.SYNC_ALL) {
-                                        com.vaulta.vault.preferences.DefaultSyncPolicy.SELECTIVE_MANUAL
-                                    } else {
-                                        com.vaulta.vault.preferences.DefaultSyncPolicy.SYNC_ALL
-                                    }
-                                    viewModel.setDefaultSyncPolicy(newPolicy)
+                    if (!viewModel.isOfflineEdition) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                        ListItem(
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            leadingContent = {
+                                Box(
+                                    modifier = Modifier
+                                        .size(42.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(MaterialTheme.colorScheme.primaryContainer),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CloudSync,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.size(24.dp)
+                                    )
                                 }
-                            ) {
+                            },
+                            headlineContent = {
+                                Text("Default Cloud Sync Policy", fontWeight = FontWeight.SemiBold)
+                            },
+                            supportingContent = {
                                 Text(
-                                    if (defaultSyncPolicy == com.vaulta.vault.preferences.DefaultSyncPolicy.SYNC_ALL) "Sync All" else "Selective",
-                                    fontWeight = FontWeight.Bold
+                                    text = defaultSyncPolicy.description,
+                                    style = MaterialTheme.typography.bodySmall
                                 )
+                            },
+                            trailingContent = {
+                                TextButton(
+                                    onClick = {
+                                        val newPolicy = if (defaultSyncPolicy == com.vaulta.vault.preferences.DefaultSyncPolicy.SYNC_ALL) {
+                                            com.vaulta.vault.preferences.DefaultSyncPolicy.SELECTIVE_MANUAL
+                                        } else {
+                                            com.vaulta.vault.preferences.DefaultSyncPolicy.SYNC_ALL
+                                        }
+                                        viewModel.setDefaultSyncPolicy(newPolicy)
+                                    }
+                                ) {
+                                    Text(
+                                        if (defaultSyncPolicy == com.vaulta.vault.preferences.DefaultSyncPolicy.SYNC_ALL) "Sync All" else "Selective",
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
-                        }
-                    )
+                        )
+                    }
                 }
             }
 

@@ -67,15 +67,6 @@ class BlobStoreImpl @Inject constructor(
         }
     }
 
-    override fun decryptBlobToFile(blobName: String, targetFile: File, fileKey: ByteArray) {
-        targetFile.sink().buffer().use { sink ->
-            val sourceFile = File(blobsDir, blobName)
-            sourceFile.source().buffer().use { source ->
-                streamingEncryption.decryptStream(source, sink, fileKey)
-            }
-        }
-    }
-
     override fun deleteBlob(blobName: String): Boolean {
         val targetFile = File(blobsDir, blobName)
         return if (targetFile.exists()) targetFile.delete() else true

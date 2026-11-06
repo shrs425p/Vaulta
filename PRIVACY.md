@@ -1,7 +1,7 @@
 # Privacy Policy for Vaulta
 
-**Last Updated:** November 4, 2026  
-**Effective Date:** November 4, 2026  
+**Last Updated:** November 6, 2026  
+**Effective Date:** November 6, 2026  
 **Application:** Vaulta (Zero-Knowledge Local-First Encrypted Vault for Android)
 
 ---
@@ -12,63 +12,62 @@
 
 Our fundamental belief is simple: **Your private files, photos, videos, documents, credentials, and cryptographic keys belong exclusively to you.** 
 
-Vaulta operates with no telemetry, no tracking, no advertising, and no centralized backend servers. The developers of Vaulta do not have, and will never have, access to your master password, your encryption keys, your stored files, or your credentials.
+Vaulta is designed for local-first use and does not include a Vaulta-operated account service or analytics backend. The Offline build has no network permission. The Cloud build can contact Google services when you sign in or use Google Drive sync. Vaulta is open source; these statements describe the current repository and are not a guarantee that every future build or third-party service behaves identically.
 
 ---
 
 ## 2. Information We Do NOT Collect
 
-Vaulta is an offline-first, client-side application. We do **not** collect, transmit, sell, rent, or monetize any user data:
+Vaulta does not include an advertising or analytics SDK, and the repository does not implement a Vaulta-operated collection service. This is different from saying that the Cloud build never sends data: Google receives the requests needed for sign-in and Drive operations, under Google's own terms and privacy policy. The app also writes diagnostic messages through Android logging APIs; do not assume device logs can never contain operational details.
 
-- **No Personal Identifiable Information (PII):** We do not collect names, email addresses, phone numbers, device identifiers (IMEI, Android ID, Advertising ID), IP addresses, or location coordinates.
+- **No Vaulta-run PII collection service:** The current repository has no Vaulta-operated server that collects these details. Google sign-in and Drive can expose account, connection, request, and usage metadata to Google. Android and other device services may also process data under their own policies.
 - **No Analytics or Telemetry:** There are zero tracking SDKs, analytics libraries (e.g., Firebase Analytics, Google Analytics, Mixpanel), crash-reporting beacons, or behavioral monitoring tools integrated into Vaulta.
 - **No Account Registration:** You do not need an account with us to use Vaulta. We run no user registration servers or authentication databases.
-- **No Access to Unencrypted Content:** Plaintext files, notes, credentials, 2FA/TOTP seeds, and passwords are never visible to anyone other than you.
+- **Local UI handling:** Vaulta processes decrypted content on the device while the vault is unlocked. The app's source and Android platform behavior determine which actions are available; this policy is not a guarantee against a compromised device, operating system, keyboard, accessibility service, or user-authorized system picker.
 
 ---
 
 ## 3. How Your Data is Handled & Protected
 
-All data processing takes place strictly on your local device.
+Vault creation, encryption, decryption, browsing, and local storage are performed on your device. If you use Cloud sync, encrypted data is also sent to Google Drive as described below.
 
 ### 3.1 Encryption & Key Derivation (Zero-Knowledge)
 - **Master Key Derivation:** Your vault's master key is derived locally using **Argon2id** (via Argon2Kt) with memory-hard parameters ($64\text{ MiB}$ RAM, $3$ iterations, $4$ parallel lanes) or PBKDF2-HMAC-SHA256, salted with high-entropy cryptographic random bytes.
 - **File & Credential Encryption:** Stored files, credentials, and metadata are encrypted on-device using authenticated **256-bit AES-GCM** (Galois/Counter Mode). Each file payload utilizes a unique, per-file derived cryptographic subkey via HKDF-SHA256 and unique nonces for every 64 KiB chunk to prevent chunk swapping, truncation, and tampering.
-- **Traffic & Size Fingerprinting Defense:** Encrypted file blocks are padded with cryptographically secure random bytes to align with standard 64 KiB boundaries, preventing eavesdroppers and cloud storage providers from deducing file types or identities through exact file size matching.
-- **Memory Hygiene:** In-memory plaintext buffers, derived keys, and password character arrays are explicitly overwritten with zeroes using secure zeroization routines immediately after use.
-- **In-Memory SQLite Index:** Decrypted directory trees and credential records exist exclusively within an in-memory SQLite database while the vault is actively unlocked. Locking the vault or closing the application immediately wipes the in-memory database.
+- **Traffic and size metadata:** The implementation pads encrypted file data, but a network or storage provider may still observe traffic timing, transfer volume, account usage, and request metadata. Padding does not hide all file-size or activity information.
+- **Memory hygiene:** Some sensitive byte buffers and key material are cleared where the implementation and platform permit. Managed-runtime copies, immutable UI strings, OS clipboard contents, crash state, and memory snapshots cannot be guaranteed to disappear immediately.
+- **In-memory index:** The app uses an in-memory database for decrypted index data while unlocked. Clearing process memory is best effort; it is not a forensic guarantee that every copy is immediately erased.
 
 ### 3.2 Biometric Authentication
-- Biometric authentication (fingerprint, face unlock) utilizes Android's native `BiometricPrompt` API and hardware-backed **Android KeyStore** (Trusted Execution Environment / StrongBox Keymaster HSM).
+- Biometric authentication uses Android's native biometric APIs and Android Keystore-backed key material where supported. Hardware security level varies by device; Vaulta cannot guarantee that every device uses StrongBox or a particular TEE.
 - Biometric templates and sensor data never leave the secure hardware chip and are never accessible to Vaulta.
 - Biometric unlock can be enabled or revoked by the user at any time from within the application's settings.
 
 ### 3.3 Screen Protection, Auto-Lock & Anti-Forensics
-- **FLAG_SECURE:** Vaulta enforces Android's `WindowManager.LayoutParams.FLAG_SECURE` across all windows, blocking screenshots, screen recording, and preventing sensitive previews in Android's Recent Apps / App Switcher view.
+- **Screen capture protection:** The main activity applies Android `FLAG_SECURE` in configured app states. Android/OEM behavior and external cameras or a compromised device can bypass practical screenshot protection.
 - **Auto-Lock Timer:** An adjustable auto-lock manager locks the vault and shreds in-memory keys after a designated period of inactivity or whenever the application is sent to the background.
-- **Clipboard Auto-Purge:** Copies sensitive passwords and TOTP codes with Android 13+ `EXTRA_IS_SENSITIVE` flags and automatically wipes the Android clipboard within 30 seconds.
-- **Original Source File Shredder:** When you import sensitive photos, videos, or documents, Vaulta can automatically or interactively delete the unencrypted source file from your device storage (Downloads, Camera Roll, SD card) via Android SAF, eliminating leftover plaintext traces and preventing OS media scanners from indexing the original file.
+- **Clipboard Auto-Purge:** Copies sensitive passwords and TOTP codes with Android 13+ `EXTRA_IS_SENSITIVE` flags and attempts to clear Vaulta-owned clipboard contents within 30 seconds. Android may retain or restrict clipboard data after process death or background access.
+- **Source-file deletion:** Deletion of an imported original depends on the selected Android document provider and storage medium. Normal deletion does not securely erase flash storage or guarantee removal of copies, backups, thumbnails, or provider trash.
 - **Directory Shielding (`.nomedia`):** Vaulta supports creating `.nomedia` shield files in user directories, instructing Android's system `MediaScanner` to skip scanning and indexing those folders.
 
 ---
 
-## 4. Application Flavors & Network Connectivity
+## 4. App Editions & Network Connectivity
 
-Vaulta is released in two distinct build flavors to provide absolute transparency and user choice:
+Vaulta is released in two editions to make network and sync capabilities clear:
 
 ### A. FOSS / Offline Edition (`com.vaulta.shrs.offline`)
-- **Zero Network Permissions:** The `android.permission.INTERNET` permission is completely stripped from the application manifest.
-- **100% Air-Gapped:** The application has no physical capability to initiate network calls, contact any server, or communicate over the web. All cloud synchronization libraries are completely excluded from the compiled binary.
+- **No app network permission:** The Offline source manifest removes `INTERNET` and `ACCESS_NETWORK_STATE`; check the merged release manifest whenever dependencies or build configuration change. Offline still uses third-party libraries for local UI, storage, cryptography, and media functions.
 
 ### B. Cloud Backup Edition (`com.vaulta.shrs`)
-- **Optional & User-Initiated:** Cloud sync is completely optional and disabled by default.
-- **Direct Client-to-Cloud Connection:** Synchronization operates directly between your device and Google Drive via official Google APIs. There are no intermediary proxy servers, third-party relays, or developer-controlled servers.
+- **Optional Cloud features:** Cloud sync requires the Cloud build and a Google sign-in. The app contacts Google services for authentication and Drive operations. Background sync depends on user settings and Android WorkManager scheduling.
+- **Google receives requests:** Sync uses Google APIs and Google Play Services Auth. The current code has no Vaulta-operated relay. Google and the device/network provider may process connection and account metadata under their respective terms.
 - **Stealth & Visible Storage Modes:** Users can freely choose between:
   - **Stealth Mode (Hidden App Data):** Stores encrypted backups strictly in Google Drive's isolated Application Data folder (`DRIVE_APPDATA`), completely hidden from Drive search and web file lists.
   - **Visible Mode:** Stores encrypted backups in a dedicated `Vaulta Backups` folder in Google Drive (`DRIVE_FILE`), allowing user-managed backup verification.
 - **Selective Sync Policies:** You can mark individual files as `LOCAL_ONLY` (retained exclusively on local device storage, never synced) or `AUTO_SYNC`.
 - **On-Demand Cloud Restore:** When restoring onto a new device, only the lightweight encrypted index (`vault_index.enc`) is synchronized upfront; individual encrypted file blobs are pulled on-demand, preventing unwanted storage and mobile data consumption.
-- **End-to-End Encrypted Ciphertext Only:** Plaintext files, filenames, passwords, and encryption keys are **never** transmitted. Only encrypted blobs (named with random UUIDs) and the encrypted index are synchronized. Even if cloud storage is compromised, your data remains cryptographically inaccessible without your master password and `vault.key` file.
+- **Encrypted sync payloads:** The sync implementation is intended to upload encrypted blobs and an encrypted index, not plaintext file contents or credentials. This depends on the current encryption and sync code and should be re-verified for releases. Google can still see account, request, timing, and storage metadata. Encryption does not protect data after it is unlocked on a compromised device.
 
 ---
 
@@ -80,36 +79,30 @@ Vaulta requests only the minimal set of permissions strictly necessary to delive
 |:---|:---|
 | `USE_BIOMETRIC` / `USE_FINGERPRINT` | Authenticate biometric credentials via Android KeyStore to unlock the vault locally. |
 | Storage Access Framework (SAF) | Allows you to select files to import, export, or store your portable `vault.key`. Uses standard Android system file pickers; Vaulta never requests broad, legacy external storage permissions. |
-| `INTERNET` *(Cloud Flavor Only)* | Used solely to synchronize encrypted blobs directly between your device and your personal Google Drive account. |
-| `ACCESS_NETWORK_STATE` *(Cloud Flavor Only)* | Verifies connectivity status before initiating scheduled WorkManager background synchronization tasks. |
+| `INTERNET` *(Cloud edition only)* | Google sign-in and Google Drive sync requests. |
+| `ACCESS_NETWORK_STATE` *(Cloud edition only)* | Checks connectivity for sync work. |
 
 ---
 
 ## 6. Third-Party Libraries & Dependencies
 
-Vaulta relies exclusively on trusted, open-source Android libraries:
-- **AndroidX & Jetpack:** Core architecture, Jetpack Compose UI, Room Database, Navigation, WorkManager.
-- **Argon2Kt:** Local JNI bindings for Argon2id key derivation.
-- **Google Tink / AndroidX Security:** Authenticated cryptographic primitives and KeyStore management.
-- **Coil:** Client-side in-memory image loading with zero disk caching.
-- **AndroidX Media3 (ExoPlayer):** In-memory streaming media playback with zero unencrypted disk leaks.
-- **Google API Client *(Cloud Flavor Only)*:** Official client for direct Google Drive synchronization.
+Vaulta uses third-party dependencies for Android UI, storage, cryptography, media, and (Cloud only) Google Drive integration. The Offline runtime excludes `:core-sync`; Cloud includes Google API clients, Retrofit, OkHttp, WorkManager, and Google Play Services Auth. Most app dependencies use permissive open-source licenses such as Apache-2.0 or MIT. Google Play Services Auth is governed by Google's SDK/service terms, not Apache-2.0. Required third-party notices should be included with releases.
 
-None of these libraries collect personal information or transmit telemetry on behalf of Vaulta.
+The current build does not declare an analytics or crash-reporting SDK. Some app code writes Android log messages; dependency behavior can change when versions change. Inspect the resolved release dependency graph before each release.
 
 ---
 
 ## 7. Data Retention & User Control
 
 - **Full Data Ownership:** All data encrypted by Vaulta belongs solely to you.
-- **Data Deletion:** You can delete individual files, credentials, or entire folders at any time. When a file is deleted from Vaulta, its encrypted payload on disk is deleted and its index record is purged.
-- **Complete Erasure:** Clearing the application data or uninstalling Vaulta immediately and irreversibly deletes the local encrypted vault and all associated keys. If you use cloud sync, deleting the Google Drive backup folder or clearing hidden app data completely deletes all remote encrypted backups.
+- **Deleting vault items:** Vaulta removes the selected encrypted item from its local vault storage and updates the vault index. When Cloud sync is enabled, the app also requests deletion of the corresponding remote item from Google Drive.
+- **Deleting app data or backups:** Android manages removal of Vaulta's private app data when app data is cleared or the app is uninstalled. Cloud backups can be removed through Vaulta's cloud controls or Google Drive. Google processes remote deletion under its own service and retention policies.
 
 ---
 
 ## 8. Children’s Privacy
 
-Vaulta does not address or collect data from anyone, including children under the age of 13 (or under the applicable age of digital consent in your jurisdiction). Because Vaulta collects no personal data whatsoever, it is fully compliant with COPPA, GDPR, and global privacy frameworks.
+Vaulta is not designed specifically for children. This policy is not a certification of compliance with COPPA, GDPR, or any other privacy law. The Cloud edition uses Google services, which may process account and connection data under Google's terms. Users and distributors should assess legal obligations for their use and jurisdictions.
 
 ---
 

@@ -42,9 +42,9 @@ Vaulta follows a strict modular clean architecture:
 - `feature-*`: Jetpack Compose UI screens adhering to Material 3 design tokens.
 
 ### Security Rules for PRs
-1. **Never cache decrypted plaintext on disk:** All decrypted buffers must stream in-memory through RAM.
+1. **Never cache decrypted plaintext on disk:** New previews must use memory-only buffers; do not re-enable file-backed media, PDF, binary, export, print, or external-app paths without a design and tests proving the security boundary.
 2. **Never commit sensitive files:** Ensure `.gitignore` is respected (no `.jks`, `.keystore`, `.properties`, or credentials).
-3. **Keep offline build air-gapped:** No network libraries or internet permissions may ever be introduced into `offline` product flavors.
+3. **Keep the Offline edition air-gapped:** No network libraries or internet permissions may ever be introduced into the `offline` product edition.
 4. **Preserve test coverage:** Any modification to cryptographic or synchronization logic must include corresponding unit tests in `src/test/`.
 
 ---

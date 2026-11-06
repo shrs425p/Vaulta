@@ -1,17 +1,25 @@
-<p align="center">
-  <img src="docs/banner.png" alt="Vaulta Social Preview" width="100%" />
-</p>
+# Vaulta: Air-Gapped Zero-Knowledge Android Vault
 
-# Vaulta
+<div align="center">
+  <img src="docs/vaulta-banner.png" alt="Vaulta Banner" width="100%">
+  
+  <br>
 
-Open-source, local-first Android vault for encrypted files, passwords, and 2FA with in-memory RAM streaming and air-gapped security.
+  <h3>Vaulta is an open-source, local-first Android vault for encrypted files, passwords, and 2FA with memory-only previews for supported file types and an offline edition.</h3>
 
-[![Release](https://img.shields.io/github/v/release/shrs425p/Vaulta?label=Release&color=24634d)](https://github.com/shrs425p/Vaulta/releases/latest)
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Android](https://img.shields.io/badge/Android-8.0%2B%20(API%2026%2B)-brightgreen.svg)](https://developer.android.com)
-[![Website](https://img.shields.io/badge/Website-vaultaaa.web.app-17231e.svg)](https://vaultaaa.web.app)
+  <p>
+    <a href="https://vaultaaa.web.app">Official Website</a> &bull; 
+    <a href="https://vaultaaa.web.app/download">Downloads Hub</a> &bull; 
+    <a href="https://github.com/shrs425p/Vaulta/discussions">Discussions</a>
+  </p>
 
-Official Website: [vaultaaa.web.app](https://vaultaaa.web.app) | Downloads Hub: [vaultaaa.web.app/download](https://vaultaaa.web.app/download)
+  <p>
+    <a href="https://github.com/shrs425p/Vaulta/releases/latest"><img src="https://img.shields.io/github/v/release/shrs425p/Vaulta?label=Release&color=24634d" alt="Release"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License"></a>
+    <a href="https://developer.android.com"><img src="https://img.shields.io/badge/Android-8.0%2B%20(API%2026%2B)-brightgreen.svg" alt="Android"></a>
+    <a href="https://vaultaaa.web.app"><img src="https://img.shields.io/badge/Website-vaultaaa.web.app-17231e.svg" alt="Website"></a>
+  </p>
+</div>
 
 <p align="center">
   <img src="docs/screenshots/screen_home.jpg" width="22%" alt="Vaulta Home Screen" />
@@ -37,9 +45,9 @@ Vaulta solves a specific problem that existing security tools leave fragmented a
 
 - **Vaulta's Architectural Differences:**
   - **Air-Gapped Offline Build:** The offline edition declares no `android.permission.INTERNET`. The Android OS prevents the process from creating network sockets.
-  - **In-Memory RAM Streaming:** Encrypted photos, audio, videos, and PDFs stream through authenticated 64 KB cipher chunks directly into RAM buffers. Decrypted plaintext is never written to flash storage or temporary cache files.
+  - **Memory-Only Previews:** Images, text, tables, and documents decrypt into memory. Video and audio use authenticated encrypted-chunk streaming without a plaintext cache. PDF, binary, external-app, print, and decrypted-export paths remain disabled.
   - **Unified Security Boundary:** 2FA TOTP/HOTP codes, password credentials, sensitive notes, and encrypted files live within a single Argon2id + AES-256-GCM hardware-backed vault.
-  - **Zero Vendor Lock-In:** A complete one-click batch export option in Settings allows users to decrypt and restore all original media and credentials at any time.
+  - **Explicit Privacy Boundary:** The app does not silently export decrypted content or hand it to other applications.
 
 ---
 
@@ -58,7 +66,7 @@ Vaulta is released in two distinct editions to match your personal operational s
 - **Offline Edition (Air-Gapped):**
   - Package: `com.vaulta.shrs.offline`
   - Completely omits `android.permission.INTERNET`.
-  - Zero network libraries compiled into the binary.
+  - No Coil/OkHttp image-network stack is included in the offline runtime dependency graph.
   - [Download Offline APK](https://github.com/shrs425p/Vaulta/releases/latest/download/app-offline-release.apk) (5.08 MB)
 
 - **Online Edition (Google Drive Sync):**
@@ -77,8 +85,8 @@ adb install -r app-offline-release.apk
 
 ## Key Capabilities
 
-- **In-Memory RAM Streaming:**
-  Encrypted video, audio, photos, and PDF files stream directly from AES-256-GCM cipher chunks into memory buffers. Plaintext data never touches Android storage or flash memory cache.
+- **Memory-only previews:**
+  Images, text, table, and document previews use memory buffers. Video and audio use authenticated encrypted-chunk streaming without writing a complete plaintext file to storage. PDF, binary preview, export, printing, and external-app hand-off remain disabled.
 
 - **Encrypted Password Manager:**
   Client-side credential store with zxcvbn entropy strength estimation, automatic clipboard purges after 30 seconds, and Diceware passphrase generation.
@@ -89,8 +97,8 @@ adb install -r app-offline-release.apk
 - **Hardware Root of Trust:**
   Biometric unlock keys backed by Android Keystore (TEE / StrongBox). Screen surveillance protection enforced via `FLAG_SECURE`.
 
-- **Batch Export:**
-  Full batch-export capability to decrypt and restore all original media, documents, and credentials back to unencrypted files at any time from Settings.
+- **Export boundary:**
+  Decrypted export, printing, and external-app sharing are intentionally disabled to preserve the plaintext-in-memory security boundary.
 
 - **Disaster Recovery via portable `vault.key`:**
   Encrypted salt and parameter container file allows full vault migration across phones without third-party servers.
@@ -164,7 +172,7 @@ cd Vaulta
 ```
 
 Compiled APKs will be located at:
-`app/build/outputs/apk/<flavor>/debug/`
+`app/build/outputs/apk/<edition>/debug/`
 
 ---
 

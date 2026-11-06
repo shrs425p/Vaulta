@@ -1047,6 +1047,64 @@ private fun EntryListItem(
     modifier: Modifier = Modifier
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    var confirmRemoveFromCloud by remember(entry.id) { mutableStateOf(false) }
+    var confirmDelete by remember(entry.id) { mutableStateOf(false) }
+
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text(if (entry.isDirectory) "Delete folder?" else "Delete item?") },
+            text = {
+                Text(
+                    if (entry.isDirectory) {
+                        "${entry.name} and its contents will be permanently removed from this vault."
+                    } else {
+                        "${entry.name} and its local encrypted copy will be permanently removed. Any cloud copy will be removed on the next successful sync."
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmDelete = false
+                        onDelete()
+                    }
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (confirmRemoveFromCloud) {
+        AlertDialog(
+            onDismissRequest = { confirmRemoveFromCloud = false },
+            title = { Text("Remove cloud copy?") },
+            text = {
+                Text("${entry.name} will stay on this device, but its cloud copy will be removed and it will no longer sync automatically.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmRemoveFromCloud = false
+                        viewModel.removeEntryFromCloud(entry.id)
+                    }
+                ) {
+                    Text("Remove from Cloud", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmRemoveFromCloud = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 
     Surface(
         onClick = onClick,
@@ -1078,7 +1136,7 @@ private fun EntryListItem(
                         fontWeight = FontWeight.Medium,
                         modifier = Modifier.weight(1f, fill = false)
                     )
-                    if (!entry.isDirectory && !entry.isAvailableLocally) {
+                    if (viewModel.isSyncAvailable && !entry.isDirectory && !entry.isAvailableLocally) {
                         Surface(
                             shape = RoundedCornerShape(6.dp),
                             color = MaterialTheme.colorScheme.primaryContainer
@@ -1101,7 +1159,7 @@ private fun EntryListItem(
                                 )
                             }
                         }
-                    } else if (!entry.isDirectory && entry.syncPolicy == SyncPolicy.LOCAL_ONLY) {
+                    } else if (viewModel.isSyncAvailable && !entry.isDirectory && entry.syncPolicy == SyncPolicy.LOCAL_ONLY) {
                         Surface(
                             shape = RoundedCornerShape(6.dp),
                             color = MaterialTheme.colorScheme.secondaryContainer
@@ -1120,7 +1178,7 @@ private fun EntryListItem(
                 val dateStr = SimpleDateFormat("MMM d, yyyy", Locale.getDefault()).format(Date(entry.modifiedAt))
                 val detail = if (entry.isDirectory) {
                     dateStr
-                } else if (!entry.isAvailableLocally) {
+                } else if (viewModel.isSyncAvailable && !entry.isAvailableLocally) {
                     "${formatFileSize(entry.sizeBytes)} • Cloud Only • Tap to download"
                 } else {
                     "${formatFileSize(entry.sizeBytes)} • $dateStr"
@@ -1145,7 +1203,7 @@ private fun EntryListItem(
                         onDismissRequest = { showMenu = false },
                         shape = RoundedCornerShape(16.dp)
                     ) {
-                        if (!entry.isDirectory && !entry.isAvailableLocally) {
+                        if (viewModel.isSyncAvailable && !entry.isDirectory && !entry.isAvailableLocally) {
                             DropdownMenuItem(
                                 text = { Text("Make Available Offline") },
                                 leadingIcon = { Icon(Icons.Default.CloudDownload, contentDescription = null) },
@@ -1155,7 +1213,7 @@ private fun EntryListItem(
                                 }
                             )
                         }
-                        if (!entry.isDirectory && entry.isAvailableLocally) {
+                        if (viewModel.isSyncAvailable && !entry.isDirectory && entry.isAvailableLocally) {
                             if (entry.syncPolicy == SyncPolicy.LOCAL_ONLY) {
                                 DropdownMenuItem(
                                     text = { Text("Upload to Cloud") },
@@ -1171,7 +1229,7 @@ private fun EntryListItem(
                                     leadingIcon = { Icon(Icons.Default.CloudOff, contentDescription = null) },
                                     onClick = {
                                         showMenu = false
-                                        viewModel.removeEntryFromCloud(entry.id)
+                                    confirmRemoveFromCloud = true
                                     }
                                 )
                             }
@@ -1192,7 +1250,7 @@ private fun EntryListItem(
                                 onMove()
                             }
                         )
-                        if (!entry.isDirectory && entry.isAvailableLocally) {
+                        if (viewModel.isSyncAvailable && !entry.isDirectory && entry.isAvailableLocally) {
                             DropdownMenuItem(
                                 text = { Text("Export Decrypted") },
                                 onClick = {
@@ -1208,7 +1266,7 @@ private fun EntryListItem(
                             },
                             onClick = {
                                 showMenu = false
-                                onDelete()
+                                confirmDelete = true
                             }
                         )
                     }
@@ -1230,8 +1288,40 @@ private fun EntryGridItem(
     modifier: Modifier = Modifier
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    var confirmDelete by remember(entry.id) { mutableStateOf(false) }
     val ext = entry.name.substringAfterLast('.', "").lowercase()
     val isVideo = BrowserViewModel.isVideo(entry.mimeType.orEmpty().lowercase(), ext)
+
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text(if (entry.isDirectory) "Delete folder?" else "Delete item?") },
+            text = {
+                Text(
+                    if (entry.isDirectory) {
+                        "${entry.name} and its contents will be permanently removed from this vault."
+                    } else {
+                        "${entry.name} and its local encrypted copy will be permanently removed. Any cloud copy will be removed on the next successful sync."
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmDelete = false
+                        onDelete()
+                    }
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 
     Card(
         onClick = onClick,
@@ -1326,7 +1416,7 @@ private fun EntryGridItem(
                             },
                             onClick = {
                                 showMenu = false
-                                onDelete()
+                                confirmDelete = true
                             }
                         )
                     }

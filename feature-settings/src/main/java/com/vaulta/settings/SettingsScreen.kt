@@ -269,7 +269,7 @@ fun SettingsScreen(
                 }
             }
 
-            // 3. CLOUD BACKUP & SYNC (Cloud Flavor) or AIR-GAPPED PRIVACY (Offline Flavor)
+            // 3. CLOUD BACKUP & SYNC (Cloud edition) or AIR-GAPPED PRIVACY (Offline edition)
             item {
                 if (!viewModel.isOfflineEdition) {
                     Text(

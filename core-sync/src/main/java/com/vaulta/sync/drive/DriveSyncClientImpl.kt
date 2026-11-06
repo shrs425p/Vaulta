@@ -111,7 +111,7 @@ class DriveSyncClientImpl @Inject constructor(
                     else -> "Google Drive API error (HTTP $statusCode): $errorDetails"
                 }
                 lastError = reason
-                Log.e(TAG, "GoogleJsonResponseException: $reason", e)
+                Log.e(TAG, "Google Drive API request failed")
                 if (statusCode == 401) {
                     isSessionInvalidated = true
                     signOut()
@@ -119,7 +119,7 @@ class DriveSyncClientImpl @Inject constructor(
             }
             else -> {
                 lastError = "Network error: ${e.message ?: "Unknown error"}"
-                Log.e(TAG, "Api error: ${e.message}", e)
+                Log.e(TAG, "Google Drive API request failed")
             }
         }
     }
@@ -157,7 +157,7 @@ class DriveSyncClientImpl @Inject constructor(
             lastError = null
             true
         } catch (e: Exception) {
-            Log.e(TAG, "Failed uploading blob $blobName (${file.length()} bytes) to Google Drive", e)
+            Log.e(TAG, "Failed uploading encrypted blob to Google Drive")
             handleApiError(e)
             false
         }
@@ -191,7 +191,7 @@ class DriveSyncClientImpl @Inject constructor(
             lastError = null
             true
         } catch (e: Exception) {
-            Log.e(TAG, "Failed downloading blob $blobName from Google Drive", e)
+            Log.e(TAG, "Failed downloading encrypted blob from Google Drive")
             handleApiError(e)
             false
         }
@@ -215,7 +215,7 @@ class DriveSyncClientImpl @Inject constructor(
             lastError = null
             true
         } catch (e: Exception) {
-            Log.e(TAG, "Failed deleting blob $blobName from Google Drive", e)
+            Log.e(TAG, "Failed deleting encrypted blob from Google Drive")
             handleApiError(e)
             false
         }
@@ -243,7 +243,7 @@ class DriveSyncClientImpl @Inject constructor(
             lastError = null
             true
         } catch (e: Exception) {
-            Log.e(TAG, "Failed uploading index to Google Drive", e)
+            Log.e(TAG, "Failed uploading encrypted index to Google Drive")
             handleApiError(e)
             false
         }
@@ -284,7 +284,7 @@ class DriveSyncClientImpl @Inject constructor(
             lastError = null
             bytes
         } catch (e: Exception) {
-            Log.e(TAG, "Failed downloading index from Google Drive", e)
+            Log.e(TAG, "Failed downloading encrypted index from Google Drive")
             handleApiError(e)
             null
         }
@@ -318,7 +318,7 @@ class DriveSyncClientImpl @Inject constructor(
             }
             true
         } catch (e: Exception) {
-            Log.w(TAG, "Failed cleaning up old storage space (wasStealth=$wasStealth): ${e.message}")
+            Log.w(TAG, "Failed cleaning up old Google Drive storage space")
             false
         }
     }
@@ -364,7 +364,7 @@ class DriveSyncClientImpl @Inject constructor(
             lastError = null
             list.mapNotNull { it.name }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed listing remote files from Google Drive", e)
+            Log.e(TAG, "Failed listing remote encrypted files from Google Drive")
             handleApiError(e)
             emptyList()
         }
@@ -468,7 +468,7 @@ class DriveSyncClientImpl @Inject constructor(
             lastError = null
             true
         } catch (e: Exception) {
-            Log.e(TAG, "Failed switching storage space", e)
+            Log.e(TAG, "Failed switching Google Drive storage space")
             handleApiError(e)
             false
         }
@@ -501,7 +501,7 @@ class DriveSyncClientImpl @Inject constructor(
             lastError = null
             Result.success(email)
         } catch (e: ApiException) {
-            Log.e(TAG, "Google Sign-In failed with status code ${e.statusCode}", e)
+            Log.e(TAG, "Google Sign-In failed")
             val msg = if (e.statusCode == 10) {
                 "Developer Error 10: App SHA-1 fingerprint needs to be added to Google Cloud Console for 'com.vaulta.shrs'."
             } else {
@@ -510,7 +510,7 @@ class DriveSyncClientImpl @Inject constructor(
             lastError = msg
             Result.failure(IllegalStateException(msg))
         } catch (e: Exception) {
-            Log.e(TAG, "Google Sign-In failed", e)
+            Log.e(TAG, "Google Sign-In failed")
             lastError = e.message
             Result.failure(e)
         }

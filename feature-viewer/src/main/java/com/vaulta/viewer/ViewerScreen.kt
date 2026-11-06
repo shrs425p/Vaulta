@@ -144,7 +144,6 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -154,7 +153,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.content.FileProvider
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -163,6 +161,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.vaulta.storage.index.VaultEntry
@@ -181,14 +180,12 @@ fun ViewerScreen(
     viewModel: ViewerViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
-    val clipboardManager = LocalClipboardManager.current
 
     LaunchedEffect(entryId) {
         viewModel.loadFile(entryId)
     }
 
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-
     val currentEntry: VaultEntry? = when (val state = uiState) {
         is ViewerUiState.ImageReady -> state.entry
         is ViewerUiState.VideoReady -> state.entry
@@ -211,30 +208,9 @@ fun ViewerScreen(
 
     val currentFile: File? = when (val state = uiState) {
         is ViewerUiState.ImageReady -> state.imageFile
-        is ViewerUiState.VideoReady -> state.videoFile
-        is ViewerUiState.AudioReady -> state.audioFile
         is ViewerUiState.PdfReady -> state.pdfFile
         is ViewerUiState.BinaryReady -> state.file
         else -> null
-    }
-
-    val exportLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("*/*")
-    ) { destUri: Uri? ->
-        if (destUri != null) {
-            try {
-                context.contentResolver.openOutputStream(destUri)?.use { os ->
-                    if (currentFile != null && currentFile.exists()) {
-                        currentFile.inputStream().use { it.copyTo(os) }
-                    } else if (currentData != null) {
-                        os.write(currentData)
-                    }
-                }
-                Toast.makeText(context, "Exported successfully", Toast.LENGTH_SHORT).show()
-            } catch (e: Exception) {
-                Toast.makeText(context, "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
-            }
-        }
     }
 
     DisposableEffect(entryId) {
@@ -269,7 +245,7 @@ fun ViewerScreen(
                                 Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "Open with external app")
                             }
                             IconButton(onClick = {
-                                exportLauncher.launch(currentEntry.name)
+                                plaintextBoundaryDisabled(context)
                             }) {
                                 Icon(Icons.Default.Download, contentDescription = "Export Decrypted")
                             }
@@ -309,14 +285,14 @@ fun ViewerScreen(
 
                 is ViewerUiState.VideoReady -> {
                     VideoPlayer(
-                        videoFile = state.videoFile,
+                        dataSourceFactory = state.dataSourceFactory,
                         entry = state.entry,
                         onNavigateBack = onNavigateBack,
                         onOpenExternal = {
-                            openWithExternalApp(context, state.entry, null, state.videoFile)
+                            plaintextBoundaryDisabled(context)
                         },
                         onExport = {
-                            exportLauncher.launch(state.entry.name)
+                            plaintextBoundaryDisabled(context)
                         },
                         modifier = Modifier.fillMaxSize()
                     )
@@ -324,7 +300,7 @@ fun ViewerScreen(
 
                 is ViewerUiState.AudioReady -> {
                     AudioPlayer(
-                        audioFile = state.audioFile,
+                        dataSourceFactory = state.dataSourceFactory,
                         entry = state.entry,
                         modifier = Modifier.fillMaxSize()
                     )
@@ -343,8 +319,9 @@ fun ViewerScreen(
                 is ViewerUiState.CsvReady -> {
                     CsvViewer(
                         state = state,
-                        onExport = { exportLauncher.launch(state.entry.name) },
-                        onOpenExternal = { openWithExternalApp(context, state.entry, state.data) },
+                        onExport = { plaintextBoundaryDisabled(context) },
+                        onOpenExternal = { plaintextBoundaryDisabled(context) },
+                        onCopySensitiveText = { viewModel.copySensitiveText("CSV", it) },
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -353,17 +330,19 @@ fun ViewerScreen(
                     DocumentView(
                         state = state,
                         onOpenExternal = {
-                            openWithExternalApp(context, state.entry, state.data)
+                            plaintextBoundaryDisabled(context)
                         },
                         onExport = {
-                            exportLauncher.launch(state.entry.name)
-                        }
+                            plaintextBoundaryDisabled(context)
+                        },
+                        onCopySensitiveText = { viewModel.copySensitiveText("Document", it) }
                     )
                 }
 
                 is ViewerUiState.TextReady -> {
                     TextViewer(
                         state = state,
+                        onCopySensitiveText = { viewModel.copySensitiveText("Text", it) },
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -397,7 +376,7 @@ fun ViewerScreen(
                         )
                         Spacer(modifier = Modifier.height(24.dp))
                         Button(
-                            onClick = { openWithExternalApp(context, state.entry, null, state.file) },
+                            onClick = { plaintextBoundaryDisabled(context) },
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null)
@@ -406,7 +385,7 @@ fun ViewerScreen(
                         }
                         Spacer(modifier = Modifier.height(12.dp))
                         OutlinedButton(
-                            onClick = { exportLauncher.launch(state.entry.name) },
+                            onClick = { plaintextBoundaryDisabled(context) },
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Icon(Icons.Default.Download, contentDescription = null)
@@ -439,6 +418,7 @@ fun ViewerScreen(
             }
         }
     }
+
 }
 
 @Composable
@@ -497,7 +477,7 @@ private fun ZoomableImageViewer(
 
 @Composable
 private fun VideoPlayer(
-    videoFile: File,
+    dataSourceFactory: EncryptedMediaDataSource.Factory,
     entry: VaultEntry,
     onNavigateBack: () -> Unit,
     onOpenExternal: () -> Unit,
@@ -559,9 +539,11 @@ private fun VideoPlayer(
         }
     }
 
-    val exoPlayer = remember(videoFile.absolutePath) {
-        ExoPlayer.Builder(context).build().apply {
-            val mediaItem = MediaItem.fromUri(Uri.fromFile(videoFile))
+    val exoPlayer = remember(dataSourceFactory) {
+        ExoPlayer.Builder(context)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
+            .build().apply {
+            val mediaItem = MediaItem.fromUri(Uri.parse("vaulta://encrypted-media"))
             setMediaItem(mediaItem)
             prepare()
             playWhenReady = true
@@ -571,7 +553,7 @@ private fun VideoPlayer(
     DisposableEffect(exoPlayer) {
         val listener = object : Player.Listener {
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                android.util.Log.e("VaultaViewer", "ExoPlayer error: ${error.errorCodeName} - ${error.message}", error)
+                android.util.Log.e("VaultaViewer", "Secure playback failed")
                 playbackError = error.message ?: "Playback error"
             }
         }
@@ -715,7 +697,7 @@ private fun VideoPlayer(
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = "Tip: Tap 'Open In' in the top right to play with VLC, MX Player, or your system media player.",
+                        text = "This file could not be decoded by the secure in-app player. External playback is disabled to keep plaintext inside Vaulta.",
                         color = Color.LightGray,
                         textAlign = TextAlign.Center,
                         style = MaterialTheme.typography.bodySmall
@@ -728,7 +710,7 @@ private fun VideoPlayer(
 
 @Composable
 private fun AudioPlayer(
-    audioFile: File,
+    dataSourceFactory: EncryptedMediaDataSource.Factory,
     entry: VaultEntry,
     modifier: Modifier = Modifier
 ) {
@@ -737,9 +719,11 @@ private fun AudioPlayer(
     var currentPosition by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
 
-    val exoPlayer = remember(audioFile) {
-        ExoPlayer.Builder(context).build().apply {
-            val mediaItem = MediaItem.fromUri(Uri.fromFile(audioFile))
+    val exoPlayer = remember(dataSourceFactory) {
+        ExoPlayer.Builder(context)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
+            .build().apply {
+            val mediaItem = MediaItem.fromUri(Uri.parse("vaulta://encrypted-media"))
             setMediaItem(mediaItem)
             prepare()
         }
@@ -1362,11 +1346,11 @@ private fun CsvViewer(
     state: ViewerUiState.CsvReady,
     onExport: () -> Unit,
     onOpenExternal: () -> Unit,
+    onCopySensitiveText: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
     var searchQuery by remember { mutableStateOf("") }
-    val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
 
     val filteredRows = remember(searchQuery, state.rows) {
@@ -1468,7 +1452,7 @@ private fun CsvViewer(
                     horizontalArrangement = Arrangement.End
                 ) {
                     OutlinedButton(onClick = {
-                        clipboardManager.setText(AnnotatedString(state.rawText))
+                        onCopySensitiveText(state.rawText)
                         Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
                     }) {
                         Icon(Icons.Default.ContentCopy, contentDescription = null)
@@ -1522,6 +1506,7 @@ private fun DocumentView(
     state: ViewerUiState.DocumentReady,
     onOpenExternal: () -> Unit,
     onExport: () -> Unit,
+    onCopySensitiveText: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     if (state.slides.isNotEmpty()) {
@@ -1529,6 +1514,7 @@ private fun DocumentView(
             state = state,
             onOpenExternal = onOpenExternal,
             onExport = onExport,
+            onCopySensitiveText = onCopySensitiveText,
             modifier = modifier
         )
     } else {
@@ -1536,6 +1522,7 @@ private fun DocumentView(
             state = state,
             onOpenExternal = onOpenExternal,
             onExport = onExport,
+            onCopySensitiveText = onCopySensitiveText,
             modifier = modifier
         )
     }
@@ -1546,10 +1533,10 @@ private fun PresentationViewer(
     state: ViewerUiState.DocumentReady,
     onOpenExternal: () -> Unit,
     onExport: () -> Unit,
+    onCopySensitiveText: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val clipboardManager = LocalClipboardManager.current
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
     val lazyListState = rememberLazyListState()
@@ -1943,7 +1930,7 @@ private fun PresentationViewer(
                                         }
                                         IconButton(
                                             onClick = {
-                                                clipboardManager.setText(AnnotatedString(slide.rawText))
+                                                onCopySensitiveText(slide.rawText)
                                                 Toast.makeText(context, "Slide ${slide.slideNumber} text copied", Toast.LENGTH_SHORT).show()
                                             },
                                             modifier = Modifier.size(28.dp)
@@ -2045,9 +2032,9 @@ private fun WordDocumentViewer(
     state: ViewerUiState.DocumentReady,
     onOpenExternal: () -> Unit,
     onExport: () -> Unit,
+    onCopySensitiveText: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
 
     var fontSizeSp by remember { mutableIntStateOf(13) } // Default 13sp: crisp, readable, not over-zoomed!
@@ -2178,7 +2165,7 @@ private fun WordDocumentViewer(
                     }
                     IconButton(
                         onClick = {
-                            clipboardManager.setText(AnnotatedString(state.previewText ?: ""))
+                            onCopySensitiveText(state.previewText.orEmpty())
                             Toast.makeText(context, "Text copied to clipboard", Toast.LENGTH_SHORT).show()
                         },
                         modifier = Modifier.size(32.dp)
@@ -2402,9 +2389,9 @@ private fun isColorLight(color: Color): Boolean {
 @Composable
 private fun TextViewer(
     state: ViewerUiState.TextReady,
+    onCopySensitiveText: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
 
     var searchQuery by remember { mutableStateOf("") }
@@ -2441,7 +2428,7 @@ private fun TextViewer(
             }
 
             OutlinedButton(onClick = {
-                clipboardManager.setText(AnnotatedString(state.textContent))
+                onCopySensitiveText(state.textContent)
                 Toast.makeText(context, "Text copied to clipboard", Toast.LENGTH_SHORT).show()
             }) {
                 Icon(Icons.Default.ContentCopy, contentDescription = null)
@@ -2508,48 +2495,15 @@ private fun highlightText(fullText: String, query: String, highlightColor: Color
 }
 
 private fun printPdf(context: Context, pdfFile: File, title: String) {
-    try {
-        val printManager = context.getSystemService(Context.PRINT_SERVICE) as? android.print.PrintManager ?: return
-        val printAdapter = object : android.print.PrintDocumentAdapter() {
-            override fun onLayout(
-                oldAttributes: android.print.PrintAttributes?,
-                newAttributes: android.print.PrintAttributes?,
-                cancellationSignal: android.os.CancellationSignal?,
-                callback: LayoutResultCallback?,
-                extras: android.os.Bundle?
-            ) {
-                if (cancellationSignal?.isCanceled == true) {
-                    callback?.onLayoutCancelled()
-                    return
-                }
-                val info = android.print.PrintDocumentInfo.Builder(title)
-                    .setContentType(android.print.PrintDocumentInfo.CONTENT_TYPE_DOCUMENT)
-                    .build()
-                callback?.onLayoutFinished(info, true)
-            }
+    plaintextBoundaryDisabled(context)
+}
 
-            override fun onWrite(
-                pages: Array<out android.print.PageRange>?,
-                destination: android.os.ParcelFileDescriptor?,
-                cancellationSignal: android.os.CancellationSignal?,
-                callback: WriteResultCallback?
-            ) {
-                try {
-                    pdfFile.inputStream().use { input ->
-                        java.io.FileOutputStream(destination?.fileDescriptor).use { output ->
-                            input.copyTo(output)
-                        }
-                    }
-                    callback?.onWriteFinished(arrayOf(android.print.PageRange.ALL_PAGES))
-                } catch (e: Exception) {
-                    callback?.onWriteFailed(e.message)
-                }
-            }
-        }
-        printManager.print(title, printAdapter, null)
-    } catch (e: Exception) {
-        android.widget.Toast.makeText(context, "Print error: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
-    }
+private fun plaintextBoundaryDisabled(context: Context) {
+    Toast.makeText(
+        context,
+        "Export, printing, and external apps are disabled to keep decrypted data in memory.",
+        Toast.LENGTH_LONG
+    ).show()
 }
 
 private fun getExplicitMimeType(ext: String): String? = when (ext) {
@@ -2581,41 +2535,7 @@ private fun openWithExternalApp(
     data: ByteArray?,
     existingFile: File? = null
 ) {
-    try {
-        val targetFile = if (existingFile != null && existingFile.exists()) {
-            existingFile
-        } else if (data != null) {
-            val shareDir = File(context.cacheDir, "shared_temp").apply { mkdirs() }
-            val tempFile = File(shareDir, entry.name)
-            tempFile.writeBytes(data)
-            tempFile
-        } else {
-            return
-        }
-
-        val uri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.fileprovider",
-            targetFile
-        )
-
-        val ext = entry.name.substringAfterLast('.', "").lowercase()
-        val mime = getExplicitMimeType(ext)
-            ?: (entry.mimeType?.takeIf { it.isNotBlank() && it != "application/octet-stream" })
-            ?: MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)
-            ?: "*/*"
-
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, mime)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        val chooser = Intent.createChooser(intent, "Open with")
-        chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(chooser)
-    } catch (e: Exception) {
-        Toast.makeText(context, "Could not open external app: ${e.message}", Toast.LENGTH_LONG).show()
-    }
+    plaintextBoundaryDisabled(context)
 }
 
 private fun formatDuration(millis: Long): String {

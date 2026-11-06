@@ -106,14 +106,29 @@ class VaultKeyFileSerializerImpl @Inject constructor() : VaultKeyFileSerializer 
                     "Insecure Argon2 memory cost: $memoryCostKb KB (minimum required: $MIN_ARGON2_MEMORY_KB KB)"
                 )
             }
+            if (memoryCostKb > MAX_ARGON2_MEMORY_KB) {
+                throw InvalidVaultKeyFileException(
+                    "Argon2 memory cost exceeds maximum: $memoryCostKb KB (maximum: $MAX_ARGON2_MEMORY_KB KB)"
+                )
+            }
             if (iterations < MIN_ARGON2_ITERATIONS) {
                 throw InvalidVaultKeyFileException(
                     "Insecure Argon2 iteration count: $iterations (minimum required: $MIN_ARGON2_ITERATIONS)"
                 )
             }
+            if (iterations > MAX_ARGON2_ITERATIONS) {
+                throw InvalidVaultKeyFileException(
+                    "Argon2 iteration count exceeds maximum: $iterations (maximum: $MAX_ARGON2_ITERATIONS)"
+                )
+            }
             if (parallelism < MIN_ARGON2_PARALLELISM) {
                 throw InvalidVaultKeyFileException(
                     "Insecure Argon2 parallelism: $parallelism (minimum required: $MIN_ARGON2_PARALLELISM)"
+                )
+            }
+            if (parallelism > MAX_ARGON2_PARALLELISM) {
+                throw InvalidVaultKeyFileException(
+                    "Argon2 parallelism exceeds maximum: $parallelism (maximum: $MAX_ARGON2_PARALLELISM)"
                 )
             }
 
@@ -180,5 +195,8 @@ class VaultKeyFileSerializerImpl @Inject constructor() : VaultKeyFileSerializer 
 
         /** Minimum acceptable Argon2 parallelism lane count. */
         const val MIN_ARGON2_PARALLELISM = 1
+        const val MAX_ARGON2_MEMORY_KB = 262144
+        const val MAX_ARGON2_ITERATIONS = 20
+        const val MAX_ARGON2_PARALLELISM = 8
     }
 }

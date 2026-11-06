@@ -86,7 +86,7 @@ class AutoLockManagerImpl @Inject constructor(
                     try {
                         encryptedIndex.clear()
                     } catch (e: Exception) {
-                        Log.e("AutoLockManager", "Failed to clear in-memory index on lock", e)
+                        Log.e("AutoLockManager", "Failed to clear in-memory index on lock")
                     }
                 }
             }

@@ -20,7 +20,7 @@ class StreamingEncryptionImpl @Inject constructor(
 ) : StreamingEncryption {
 
     companion object {
-        const val STREAM_VERSION: Byte = 2
+        const val STREAM_VERSION: Byte = 3
         const val STREAM_NONCE_PREFIX_SIZE: Int = 8
         const val CHUNK_DATA_SIZE: Int = CryptoConstants.CHUNK_SIZE_BYTES
         const val MAX_CHUNK_LENGTH: Int = CHUNK_DATA_SIZE + 4 + CryptoConstants.TAG_SIZE_BYTES
@@ -72,7 +72,7 @@ class StreamingEncryptionImpl @Inject constructor(
             }
 
             val nonce = buildNonce(streamNoncePrefix, chunkIndex)
-            val aad = buildAad(chunkIndex, isLast)
+            val aad = buildAad(STREAM_VERSION, chunkIndex, isLast)
 
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(
@@ -101,7 +101,7 @@ class StreamingEncryptionImpl @Inject constructor(
     override fun readStreamHeader(input: BufferedSource): StreamHeader {
         if (input.exhausted()) throw IOException("Empty ciphertext stream")
         val version = input.readByte()
-        if (version != 1.toByte() && version != 2.toByte()) {
+        if (version != 1.toByte() && version != 2.toByte() && version != 3.toByte()) {
             throw IOException("Unsupported stream version: $version")
         }
         val noncePrefix = input.readByteArray(STREAM_NONCE_PREFIX_SIZE.toLong())
@@ -124,7 +124,7 @@ class StreamingEncryptionImpl @Inject constructor(
             val ciphertextAndTag = input.readByteArray(chunkLength.toLong())
 
             val nonce = buildNonce(streamNoncePrefix, chunkIndex)
-            val aad = buildAad(chunkIndex, isLast)
+            val aad = buildAad(version, chunkIndex, isLast)
 
             try {
                 val cipher = Cipher.getInstance("AES/GCM/NoPadding")
@@ -139,7 +139,7 @@ class StreamingEncryptionImpl @Inject constructor(
                 val plaintext = if (version >= 2 && isLast) {
                     val buf = ByteBuffer.wrap(decrypted)
                     val actualLength = buf.getInt()
-                    if (actualLength < 0 || actualLength > CHUNK_DATA_SIZE) {
+                    if (actualLength < 0 || actualLength > CHUNK_DATA_SIZE || actualLength > buf.remaining()) {
                         throw IOException("Corrupted chunk: invalid padded length $actualLength")
                     }
                     val actualBytes = ByteArray(actualLength)
@@ -181,7 +181,7 @@ class StreamingEncryptionImpl @Inject constructor(
         val ciphertextAndTag = input.readByteArray(chunkLength.toLong())
 
         val nonce = buildNonce(streamNoncePrefix, chunkIndex)
-        val aad = buildAad(chunkIndex, isLast)
+        val aad = buildAad(version, chunkIndex, isLast)
 
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(
@@ -195,7 +195,7 @@ class StreamingEncryptionImpl @Inject constructor(
         return if (version >= 2 && isLast) {
             val buf = ByteBuffer.wrap(decrypted)
             val actualLength = buf.getInt()
-            if (actualLength < 0 || actualLength > CHUNK_DATA_SIZE) {
+            if (actualLength < 0 || actualLength > CHUNK_DATA_SIZE || actualLength > buf.remaining()) {
                 throw IOException("Corrupted chunk: invalid padded length $actualLength")
             }
             val actualBytes = ByteArray(actualLength)
@@ -218,8 +218,15 @@ class StreamingEncryptionImpl @Inject constructor(
         return nonce
     }
 
-    private fun buildAad(index: Long, isLast: Boolean): ByteArray {
-        val buffer = ByteBuffer.allocate(9)
+    private fun buildAad(version: Byte, index: Long, isLast: Boolean): ByteArray {
+        if (version < 3) {
+            val legacyBuffer = ByteBuffer.allocate(9)
+            legacyBuffer.putLong(index)
+            legacyBuffer.put((if (isLast) 1 else 0).toByte())
+            return legacyBuffer.array()
+        }
+        val buffer = ByteBuffer.allocate(10)
+        buffer.put(version)
         buffer.putLong(index)
         buffer.put((if (isLast) 1 else 0).toByte())
         return buffer.array()

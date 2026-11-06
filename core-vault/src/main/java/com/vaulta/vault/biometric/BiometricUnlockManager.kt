@@ -81,7 +81,8 @@ class BiometricUnlockManager @Inject constructor(
                     keyGenerator.generateKey()
                     return keyStore.getKey(KEY_ALIAS, null) as SecretKey
                 } catch (e: Exception) {
-                    Log.w("BiometricUnlockManager", "StrongBox hardware keygen failed, falling back to standard TEE KeyStore", e)
+                    Log.w("BiometricUnlockManager", "StrongBox unavailable; using standard TEE KeyStore")
+                    keyStore.deleteEntry(KEY_ALIAS)
                     builder.setIsStrongBoxBacked(false)
                 }
             }
@@ -153,7 +154,7 @@ class BiometricUnlockManager @Inject constructor(
                             Log.i(TAG, "Biometric unlock successfully enrolled")
                             onSuccess()
                         } catch (e: Exception) {
-                            Log.e(TAG, "Failed wrapping master key with biometrics", e)
+                            Log.e(TAG, "Failed wrapping master key with biometrics")
                             onError("Failed saving biometric credentials: ${e.message}")
                         } finally {
                             SecureMemory.wipe(masterKeyCopy)
@@ -182,7 +183,7 @@ class BiometricUnlockManager @Inject constructor(
             biometricPrompt.authenticate(promptInfo, cryptoObject)
         } catch (e: Exception) {
             SecureMemory.wipe(masterKeyCopy)
-            Log.e(TAG, "Error starting biometric enrollment", e)
+            Log.e(TAG, "Error starting biometric enrollment")
             onError(e.message ?: "Could not initialize biometric prompt")
         }
     }
@@ -237,7 +238,7 @@ class BiometricUnlockManager @Inject constructor(
                         try {
                             masterKey = authenticatedCipher.doFinal(ciphertext)
                         } catch (e: Exception) {
-                            Log.e(TAG, "Biometric doFinal failed", e)
+                            Log.e(TAG, "Biometric operation failed")
                             onError("Failed decrypting biometric secret: ${e.message}")
                             return
                         }
@@ -250,7 +251,7 @@ class BiometricUnlockManager @Inject constructor(
                                     onSuccess()
                                 }
                             } catch (e: Exception) {
-                                Log.e(TAG, "Failed loading index with biometric key", e)
+                                Log.e(TAG, "Failed loading index with biometric key")
                                 withContext(Dispatchers.Main) {
                                     onError("Failed decrypting vault: ${e.message}")
                                 }
@@ -284,7 +285,7 @@ class BiometricUnlockManager @Inject constructor(
             disableBiometrics()
             onError("Biometric credentials changed. Please unlock with your password and re-enable biometrics in Settings.")
         } catch (e: Exception) {
-            Log.e(TAG, "Error starting biometric unlock", e)
+            Log.e(TAG, "Error starting biometric unlock")
             onError(e.message ?: "Biometric prompt failed")
         }
     }
@@ -295,7 +296,7 @@ class BiometricUnlockManager @Inject constructor(
             if (keyStore.containsAlias(KEY_ALIAS)) keyStore.deleteEntry(KEY_ALIAS)
             Log.i(TAG, "Biometric unlock disabled and credentials purged")
         } catch (e: Exception) {
-            Log.w(TAG, "Failed disabling biometrics: ${e.message}")
+            Log.w(TAG, "Failed disabling biometrics")
         }
     }
 

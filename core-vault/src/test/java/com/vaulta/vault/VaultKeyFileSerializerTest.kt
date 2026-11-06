@@ -72,4 +72,22 @@ class VaultKeyFileSerializerTest {
             serializer.deserialize(serialized)
         }
     }
+
+    @Test
+    fun deserialize_excessiveArgon2Parameters_throwsInvalidVaultKeyFileException() {
+        val oversized = VaultKeyFile(
+            argon2Params = Argon2Params(
+                memoryCostKb = VaultKeyFileSerializerImpl.MAX_ARGON2_MEMORY_KB + 1,
+                iterations = VaultKeyFileSerializerImpl.MAX_ARGON2_ITERATIONS + 1,
+                parallelism = VaultKeyFileSerializerImpl.MAX_ARGON2_PARALLELISM + 1
+            ),
+            salt = ByteArray(32),
+            wrappedMasterKeySlotA = ByteArray(48),
+            wrappedMasterKeySlotB = ByteArray(48)
+        )
+
+        assertThrows(InvalidVaultKeyFileException::class.java) {
+            serializer.deserialize(serializer.serialize(oversized))
+        }
+    }
 }

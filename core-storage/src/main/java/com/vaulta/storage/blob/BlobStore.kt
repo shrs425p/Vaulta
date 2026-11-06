@@ -20,8 +20,6 @@ interface BlobStore {
 
     fun decryptBlobToSink(blobName: String, sink: Sink, fileKey: ByteArray)
 
-    fun decryptBlobToFile(blobName: String, targetFile: File, fileKey: ByteArray)
-
     fun deleteBlob(blobName: String): Boolean
 
     fun getBlobFile(blobName: String): File

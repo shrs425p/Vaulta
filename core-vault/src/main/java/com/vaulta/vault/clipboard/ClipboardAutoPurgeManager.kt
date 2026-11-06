@@ -24,6 +24,7 @@ class ClipboardAutoPurgeManager @Inject constructor(
     private val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var purgeJob: Job? = null
+    private var currentOwnershipLabel: String? = null
 
     /**
      * Copies sensitive [text] to the system clipboard and schedules an automatic wipe after [purgeDelayMs].
@@ -39,7 +40,9 @@ class ClipboardAutoPurgeManager @Inject constructor(
     ) {
         purgeJob?.cancel()
 
-        val clipData = ClipData.newPlainText(label, text)
+        val ownershipLabel = "$OWNERSHIP_PREFIX$label:${java.util.UUID.randomUUID()}"
+        currentOwnershipLabel = ownershipLabel
+        val clipData = ClipData.newPlainText(ownershipLabel, text)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             clipData.description.extras = PersistableBundle().apply {
                 putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
@@ -49,26 +52,46 @@ class ClipboardAutoPurgeManager @Inject constructor(
 
         purgeJob = scope.launch {
             delay(purgeDelayMs)
-            clearIfTextMatches(text)
+            if (currentOwnershipLabel == ownershipLabel) {
+                clearIfOwned(ownershipLabel)
+                currentOwnershipLabel = null
+            }
         }
     }
 
-    /**
-     * Immediately clears the clipboard if it currently holds [expectedText].
-     */
-    fun clearIfTextMatches(expectedText: String) {
+    fun clearOwnedClip() {
+        try {
+            val label = clipboardManager.primaryClip?.description?.label?.toString()
+            if (label?.startsWith(OWNERSHIP_PREFIX) == true) {
+                clearPrimaryClip()
+                currentOwnershipLabel = null
+            }
+        } catch (_: SecurityException) {
+        }
+    }
+
+    private fun clearIfOwned(ownershipLabel: String) {
         try {
             val primaryClip = clipboardManager.primaryClip
             if (primaryClip != null && primaryClip.itemCount > 0) {
-                val currentText = primaryClip.getItemAt(0).text?.toString()
-                if (currentText == expectedText) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                        clipboardManager.clearPrimaryClip()
-                    } else {
-                        clipboardManager.setPrimaryClip(ClipData.newPlainText("", ""))
-                    }
+                val label = primaryClip.description.label?.toString()
+                if (label == ownershipLabel) {
+                    clearPrimaryClip()
                 }
             }
-        } catch (_: Exception) {}
+        } catch (_: SecurityException) {
+        }
+    }
+
+    private fun clearPrimaryClip() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            clipboardManager.clearPrimaryClip()
+        } else {
+            clipboardManager.setPrimaryClip(ClipData.newPlainText("", ""))
+        }
+    }
+
+    companion object {
+        private const val OWNERSHIP_PREFIX = "VaultaSensitive:"
     }
 }
