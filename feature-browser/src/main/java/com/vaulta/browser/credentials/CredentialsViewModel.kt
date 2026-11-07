@@ -18,9 +18,12 @@ import com.vaulta.vault.session.VaultSession
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
@@ -57,8 +60,8 @@ class CredentialsViewModel @Inject constructor(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
-    private val _userMessage = MutableStateFlow<String?>(null)
-    val userMessage: StateFlow<String?> = _userMessage.asStateFlow()
+    private val _userMessage = Channel<String>(Channel.BUFFERED)
+    val userMessage: Flow<String> = _userMessage.receiveAsFlow()
 
     private val _totpRemainingSeconds = MutableStateFlow(30)
     val totpRemainingSeconds: StateFlow<Int> = _totpRemainingSeconds.asStateFlow()
@@ -128,13 +131,13 @@ class CredentialsViewModel @Inject constructor(
                     val finalCred = credential.copy(modifiedAt = System.currentTimeMillis(), passwordHistory = updatedHistory)
                     credentialDao.insertCredential(finalCred.toEntity())
                     saveEncryptedSnapshot()
-                    _userMessage.value = "Credential saved successfully"
+                    _userMessage.trySend("Credential saved successfully")
                 } catch (_: Exception) {
                     runCatching {
                         if (previous == null) credentialDao.getCredentialById(credential.id)?.let { credentialDao.deleteCredential(it) }
                         else credentialDao.insertCredential(previous)
                     }
-                    _userMessage.value = "Could not save password securely. The previous saved version was kept. Try again."
+                    _userMessage.trySend("Could not save password securely. The previous saved version was kept. Try again.")
                 }
             }
         }
@@ -147,10 +150,10 @@ class CredentialsViewModel @Inject constructor(
                 try {
                     credentialDao.deleteCredential(previous)
                     saveEncryptedSnapshot()
-                    _userMessage.value = "Credential deleted"
+                    _userMessage.trySend("Credential deleted")
                 } catch (_: Exception) {
                     runCatching { credentialDao.insertCredential(previous) }
-                    _userMessage.value = "Could not save the deletion securely. The password was kept. Try again."
+                    _userMessage.trySend("Could not save the deletion securely. The password was kept. Try again.")
                 }
             }
         }
@@ -159,7 +162,7 @@ class CredentialsViewModel @Inject constructor(
     fun copyToClipboard(label: String, secretText: String) {
         if (secretText.isBlank()) return
         clipboardAutoPurgeManager.copySensitiveText(label, secretText)
-        _userMessage.value = "$label copied! Auto-clears in 30s."
+        _userMessage.trySend("$label copied! Auto-clears in 30s.")
     }
 
     fun analyzePassword(password: String): PasswordAnalysis {
@@ -204,7 +207,7 @@ class CredentialsViewModel @Inject constructor(
                 withContext(Dispatchers.Main) { onReady(archive) }
             } catch (_: Exception) {
                 password.fill('\u0000')
-                _userMessage.value = "Could not create encrypted archive"
+                _userMessage.trySend("Could not create encrypted archive")
                 withContext(Dispatchers.Main) { onReady(null) }
             }
         }
@@ -217,7 +220,7 @@ class CredentialsViewModel @Inject constructor(
             } catch (_: Exception) {
                 password.fill('\u0000')
                 archive.fill(0)
-                _userMessage.value = "Could not open archive. Check the file and password."
+                _userMessage.trySend("Could not open archive. Check the file and password.")
                 return@launch
             }
             credentialWriteMutex.withLock {
@@ -225,13 +228,13 @@ class CredentialsViewModel @Inject constructor(
                 try {
                     credentialDao.insertCredentials(imported.map { it.toEntity() })
                     saveEncryptedSnapshot()
-                    _userMessage.value = "Imported ${imported.size} encrypted Vaulta credentials"
+                    _userMessage.trySend("Imported ${imported.size} encrypted Vaulta credentials")
                 } catch (_: Exception) {
                     runCatching {
                         credentialDao.deleteAll()
                         credentialDao.insertCredentials(previous)
                     }
-                    _userMessage.value = "Import could not be saved securely; existing passwords were kept. Try again."
+                    _userMessage.trySend("Import could not be saved securely; existing passwords were kept. Try again.")
                 } finally {
                     archive.fill(0)
                 }
@@ -245,9 +248,5 @@ class CredentialsViewModel @Inject constructor(
         }
     }
 
-    fun reportArchiveReadError() { _userMessage.value = "Could not read encrypted Vaulta archive" }
-
-    fun clearUserMessage() {
-        _userMessage.value = null
-    }
+    fun reportArchiveReadError() { _userMessage.trySend("Could not read encrypted Vaulta archive") }
 }

@@ -40,6 +40,8 @@ dependencies {
     implementation(libs.security.crypto)
     implementation(libs.lifecycle.process)
     implementation(libs.datastore.preferences)
+    implementation(libs.work.runtime)
+    implementation(libs.hilt.work)
     ksp(libs.hilt.compiler)
 
     testImplementation(libs.junit)

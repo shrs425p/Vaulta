@@ -7,12 +7,10 @@ import android.content.Context
 import android.os.Build
 import android.os.PersistableBundle
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import androidx.work.Data
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -22,8 +20,6 @@ class ClipboardAutoPurgeManager @Inject constructor(
 ) {
 
     private val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private var purgeJob: Job? = null
     private var currentOwnershipLabel: String? = null
 
     /**
@@ -38,8 +34,6 @@ class ClipboardAutoPurgeManager @Inject constructor(
         text: String,
         purgeDelayMs: Long = 30_000L
     ) {
-        purgeJob?.cancel()
-
         val ownershipLabel = "$OWNERSHIP_PREFIX$label:${java.util.UUID.randomUUID()}"
         currentOwnershipLabel = ownershipLabel
         val clipData = ClipData.newPlainText(ownershipLabel, text)
@@ -50,13 +44,20 @@ class ClipboardAutoPurgeManager @Inject constructor(
         }
         clipboardManager.setPrimaryClip(clipData)
 
-        purgeJob = scope.launch {
-            delay(purgeDelayMs)
-            if (currentOwnershipLabel == ownershipLabel) {
-                clearIfOwned(ownershipLabel)
-                currentOwnershipLabel = null
-            }
-        }
+        val workManager = WorkManager.getInstance(context)
+        workManager.cancelAllWorkByTag(PURGE_WORK_TAG)
+
+        val purgeRequest = OneTimeWorkRequestBuilder<ClipboardPurgeWorker>()
+            .setInitialDelay(purgeDelayMs, TimeUnit.MILLISECONDS)
+            .addTag(PURGE_WORK_TAG)
+            .setInputData(
+                Data.Builder()
+                    .putString(ClipboardPurgeWorker.KEY_OWNERSHIP_LABEL, ownershipLabel)
+                    .build()
+            )
+            .build()
+
+        workManager.enqueue(purgeRequest)
     }
 
     fun clearOwnedClip() {
@@ -93,5 +94,6 @@ class ClipboardAutoPurgeManager @Inject constructor(
 
     companion object {
         private const val OWNERSHIP_PREFIX = "VaultaSensitive:"
+        private const val PURGE_WORK_TAG = "ClipboardPurgeWork"
     }
 }

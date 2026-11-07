@@ -93,7 +93,6 @@ fun CredentialsScreen(
     val credentials by viewModel.credentials.collectAsStateWithLifecycle()
     val selectedCategory by viewModel.selectedCategory.collectAsStateWithLifecycle()
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
-    val userMessage by viewModel.userMessage.collectAsStateWithLifecycle()
     val totpStateMap by viewModel.totpStateMap.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -145,10 +144,9 @@ fun CredentialsScreen(
         onDispose { pendingArchive?.fill(0); pendingArchive = null }
     }
 
-    LaunchedEffect(userMessage) {
-        userMessage?.let {
+    LaunchedEffect(Unit) {
+        viewModel.userMessage.collect {
             snackbarHostState.showSnackbar(it)
-            viewModel.clearUserMessage()
         }
     }
 

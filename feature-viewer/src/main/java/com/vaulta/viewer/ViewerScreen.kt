@@ -1,3 +1,4 @@
+@file:androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 package com.vaulta.viewer
 
 import android.app.Activity
@@ -128,6 +129,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.core.net.toUri
+import androidx.core.graphics.toColorInt
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -470,7 +473,7 @@ private fun VideoPlayer(
         ExoPlayer.Builder(context)
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
             .build().apply {
-            val mediaItem = MediaItem.fromUri(Uri.parse("vaulta://encrypted-media"))
+            val mediaItem = MediaItem.fromUri("vaulta://encrypted-media".toUri())
             setMediaItem(mediaItem)
             prepare()
             playWhenReady = true
@@ -636,7 +639,7 @@ private fun AudioPlayer(
         ExoPlayer.Builder(context)
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
             .build().apply {
-            val mediaItem = MediaItem.fromUri(Uri.parse("vaulta://encrypted-media"))
+            val mediaItem = MediaItem.fromUri("vaulta://encrypted-media".toUri())
             setMediaItem(mediaItem)
             prepare()
         }
@@ -807,10 +810,14 @@ private fun PdfViewer(
 
     val horizontalScrollState = rememberScrollState()
 
-    val currentPage = if (isSinglePageView) {
-        pagerState.currentPage + 1
-    } else {
-        (lazyListState.firstVisibleItemIndex + 1).coerceIn(1, pageCount)
+    val currentPage by remember(isSinglePageView) {
+        androidx.compose.runtime.derivedStateOf {
+            if (isSinglePageView) {
+                pagerState.currentPage + 1
+            } else {
+                (lazyListState.firstVisibleItemIndex + 1).coerceIn(1, pageCount)
+            }
+        }
     }
 
     val invertColorMatrix = remember {
@@ -2239,7 +2246,7 @@ private fun parseSlideColor(hex: String?, defaultColor: Color): Color {
     return try {
         val clean = hex.removePrefix("#").trim()
         if (clean.length == 6 || clean.length == 8) {
-            Color(android.graphics.Color.parseColor("#$clean"))
+            Color("#$clean".toColorInt())
         } else {
             defaultColor
         }
