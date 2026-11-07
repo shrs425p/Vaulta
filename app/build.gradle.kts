@@ -136,8 +136,8 @@ dependencies {
     implementation(libs.navigation.compose)
     implementation(libs.hilt.android)
     implementation(libs.hilt.navigation.compose)
-    "cloudImplementation"(libs.hilt.work)
-    "cloudImplementation"(libs.work.runtime)
+    implementation(libs.hilt.work)
+    implementation(libs.work.runtime)
     ksp(libs.androidx.hilt.compiler)
     ksp(libs.hilt.compiler)
 

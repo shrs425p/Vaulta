@@ -12,6 +12,7 @@ import okio.BufferedSource
 import okio.buffer
 import okio.source
 
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class EncryptedMediaDataSource private constructor(
     private val encryptedFile: File,
     private val streamingEncryption: StreamingEncryption,
